@@ -1,0 +1,22 @@
+# aws-load-balancer-controller 가 ALB 를 프로비저닝한다.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lore-sentry
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /healthz
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: lore-sentry
+                port:
+                  name: http

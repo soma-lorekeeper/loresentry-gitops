@@ -1,0 +1,26 @@
+# 서비스 워크로드 애플리케이션.
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lore-sentry
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/soma-lorekeeper/soma-loresentry-gitops.git
+    targetRevision: main
+    path: applications/lore-sentry
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: lore-sentry
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
