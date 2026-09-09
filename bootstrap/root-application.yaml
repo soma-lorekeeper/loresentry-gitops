@@ -7,7 +7,7 @@ spec:
   project: default
 
   source:
-    repoURL: https://github.com/soma-lorekeeper/lore-sentry-gitops.git
+    repoURL: https://github.com/soma-lorekeeper/soma-loresentry-gitops.git
     targetRevision: main
     path: argocd-apps
 
