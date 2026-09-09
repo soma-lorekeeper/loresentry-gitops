@@ -1,19 +1,56 @@
 # soma-loresentry-gitops
 
-Argo CD **App-of-Apps** 패턴 기반 GitOps 저장소.
+GitOps repository for the Lore Sentry platform, managed with Argo CD using the
+**App-of-Apps** pattern.
 
-## 구조
+## Layout
 
 ```
 .
-├── bootstrap/                         # 최초 1회 수동 적용하는 루트 Application
-├── clusters/
-│   └── production/                    # 루트가 바라보는 진입점 (Application 목록)
+├── bootstrap/
+│   └── root-application.yaml            # applied once, by hand
+│
+├── argocd-apps/
+│   ├── kustomization.yaml
+│   ├── aws-load-balancer-controller.yaml
+│   ├── platform.yaml
+│   └── workload.yaml
+│
 ├── platform/
-│   ├── aws-load-balancer-controller/
-│   └── storage/
-└── applications/
-    └── lore-sentry/                   # 서비스 매니페스트
+│   ├── kustomization.yaml
+│   └── gp3-storage-class.yaml
+│
+└── workload/
+    ├── kustomization.yaml
+    ├── namespace.yaml
+    ├── deployment.yaml
+    ├── service.yaml
+    └── ingress.yaml
 ```
 
-각 디렉토리의 `.gitkeep` 은 매니페스트를 추가할 때 삭제한다.
+## How it fits together
+
+| Directory | Purpose |
+| --- | --- |
+| `bootstrap/` | The single root `Application`. Apply it once; everything else follows from Git. |
+| `argocd-apps/` | Argo CD `Application` manifests — one per component. The root application points here. |
+| `platform/` | Cluster-wide infrastructure (storage classes, and similar). |
+| `workload/` | The Lore Sentry service. Resources are scoped to their own namespace, declared in `namespace.yaml`. |
+
+Only `bootstrap/root-application.yaml` is applied manually:
+
+```bash
+kubectl apply -n argocd -f bootstrap/root-application.yaml
+```
+
+From that point on, adding an `Application` under `argocd-apps/` is enough to get
+a new component deployed.
+
+The `aws-load-balancer-controller` is installed from its upstream Helm chart, so
+it has no directory of its own — only the `Application` in `argocd-apps/`.
+
+## Status
+
+Directory skeleton only. Manifests are not written yet; the `.gitkeep` files
+exist so Git tracks the empty directories and should be removed as each
+directory gets real content.
