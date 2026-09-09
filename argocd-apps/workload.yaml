@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: workload
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/soma-lorekeeper/soma-loresentry-gitops.git
+    targetRevision: main
+    path: workload
+
+  destination:
+    server: https://kubernetes.default.svc
+    # 네임스페이스 자체는 workload/namespace.yaml 에서 선언한다.
+    namespace: lore-sentry
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
