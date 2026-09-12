@@ -21,6 +21,32 @@ spec:
         - name: api
           image: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/authentication/api:bootstrap
           imagePullPolicy: IfNotPresent
+          env:
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres
+                  key: host
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres
+                  key: port
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres
+                  key: authentication-database
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: authentication-db
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: authentication-db
+                  key: password
           ports:
             - name: http
               containerPort: 8000

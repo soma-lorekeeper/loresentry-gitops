@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: neptune
+  labels:
+    app.kubernetes.io/name: neptune
+    app.kubernetes.io/part-of: lore-sentry
+data:
+  endpoint: lore-sentry-neptune.cluster-c1guoowwmnj7.ap-northeast-2.neptune.amazonaws.com
+  reader-endpoint: lore-sentry-neptune.cluster-ro-c1guoowwmnj7.ap-northeast-2.neptune.amazonaws.com
+  port: "8182"

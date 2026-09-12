@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: lore-sentry
+data:
+  host: lore-sentry-postgres.c1guoowwmnj7.ap-northeast-2.rds.amazonaws.com
+  port: "5432"
+  authentication-database: authentication
+  content-database: content
+  ai-chat-database: ai_chat

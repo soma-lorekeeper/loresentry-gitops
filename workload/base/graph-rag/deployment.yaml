@@ -21,6 +21,22 @@ spec:
         - name: api
           image: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/graph-rag/api:bootstrap
           imagePullPolicy: IfNotPresent
+          env:
+            - name: NEPTUNE_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: neptune
+                  key: endpoint
+            - name: NEPTUNE_READER_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: neptune
+                  key: reader-endpoint
+            - name: NEPTUNE_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: neptune
+                  key: port
           ports:
             - name: http
               containerPort: 8000

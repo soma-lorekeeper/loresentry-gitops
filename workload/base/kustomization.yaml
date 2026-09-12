@@ -9,3 +9,5 @@ resources:
   - graph-rag
   - auth-valkey
   - kafka
+  - postgres
+  - neptune
