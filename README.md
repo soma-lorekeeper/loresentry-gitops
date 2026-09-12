@@ -148,6 +148,40 @@ cannot apply a change to that field and the sync fails. Replacing the class does
 not touch existing volumes — a PersistentVolume records its own reclaim policy
 when it is provisioned and never re-reads the class.
 
+## Argo CD dashboard
+
+Argo CD is reachable at `argocd.loresentry.com`, sharing the same ALB as the API
+through `group.name: lore-sentry`. Its Ingress lives in
+[`platform/argocd/`](platform/argocd/) because it is cluster infrastructure, not a
+workload.
+
+The Ingress targets `argocd-server` on port 443 with
+`alb.ingress.kubernetes.io/backend-protocol: HTTPS`. Argo CD serves TLS itself and
+redirects plain HTTP, so pointing the ALB at port 80 produces a redirect loop. The
+alternative — running the server with `--insecure` — would mean managing Argo CD's
+own ConfigMap and restarting it, so the backend-protocol annotation is preferred.
+The ALB does not validate the backend certificate, so Argo CD's self-signed cert
+is fine.
+
+The CLI speaks gRPC, which needs gRPC-Web when going through an ALB:
+
+```bash
+argocd login argocd.loresentry.com --grpc-web
+```
+
+**This puts the Argo CD login page on the public internet, and an Argo CD admin
+can change anything in the cluster.** Before leaving it exposed:
+
+- Change the initial admin password and delete `argocd-initial-admin-secret`
+- Configure SSO and disable the local admin account
+- Or move Argo CD onto its own IngressGroup with
+  `alb.ingress.kubernetes.io/inbound-cidrs` restricted to known addresses.
+  `inbound-cidrs` acts on the whole load balancer, so it cannot be applied to one
+  member of a shared group — isolating Argo CD means a second ALB.
+
+Argo CD installs itself from upstream manifests and is not otherwise managed by
+this repository; only this Ingress is.
+
 ## Service conventions
 
 Every service has the same shape, so the platform stays predictable and a new
