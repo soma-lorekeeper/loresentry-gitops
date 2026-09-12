@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway-api
+  labels:
+    app.kubernetes.io/name: gateway-api
+    app.kubernetes.io/part-of: lore-sentry
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: gateway-api

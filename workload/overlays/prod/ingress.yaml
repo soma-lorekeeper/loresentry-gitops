@@ -1,32 +1,22 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: graph-rag-api
-  namespace: graph-rag
+  name: lore-sentry-public
   annotations:
-    alb.ingress.kubernetes.io/group.name: lore-sentry
-    alb.ingress.kubernetes.io/group.order: "10"
-
-    alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/target-type: ip
-
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
-    alb.ingress.kubernetes.io/ssl-redirect: "443"
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-northeast-2:197179613039:certificate/43ac7f41-484e-46b5-8e08-15a635db5296
-
     alb.ingress.kubernetes.io/healthcheck-path: /health
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
     alb.ingress.kubernetes.io/success-codes: "200-399"
 spec:
   ingressClassName: alb
   rules:
-    - host: graph-lag-api.loresentry.com
+    - host: api.loresentry.com
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: graph-rag-api
+                name: gateway-api
                 port:
                   number: 80

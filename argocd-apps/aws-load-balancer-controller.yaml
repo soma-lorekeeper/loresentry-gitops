@@ -22,6 +22,24 @@ spec:
           create: true
           name: aws-load-balancer-controller
 
+        ingressClass: alb
+        ingressClassParams:
+          create: true
+          spec:
+            group:
+              name: lore-sentry
+            scheme: internet-facing
+            targetType: ip
+            ipAddressType: ipv4
+            certificateArn:
+              - arn:aws:acm:ap-northeast-2:197179613039:certificate/43ac7f41-484e-46b5-8e08-15a635db5296
+            sslRedirectPort: "443"
+            tags:
+              - key: Project
+                value: lore-sentry
+              - key: ManagedBy
+                value: argocd
+
   destination:
     server: https://kubernetes.default.svc
     namespace: kube-system

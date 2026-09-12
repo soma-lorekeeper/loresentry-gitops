@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: workload
+  name: workload-prod
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "0"
@@ -9,19 +9,15 @@ spec:
   project: default
 
   source:
-    repoURL: https://github.com/soma-lorekeeper/soma-loresentry-gitops.git
+    repoURL: https://github.com/soma-lorekeeper/loresentry-gitops.git
     targetRevision: main
-    path: workload
-    directory:
-      recurse: true
+    path: workload/overlays/prod
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: lore-sentry
+    namespace: prod
 
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
-    syncOptions:
-      - CreateNamespace=true

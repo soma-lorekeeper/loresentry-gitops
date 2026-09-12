@@ -9,11 +9,9 @@ spec:
   project: default
 
   source:
-    repoURL: https://github.com/soma-lorekeeper/soma-loresentry-gitops.git
+    repoURL: https://github.com/soma-lorekeeper/loresentry-gitops.git
     targetRevision: main
     path: platform
-    directory:
-      recurse: true
 
   destination:
     server: https://kubernetes.default.svc

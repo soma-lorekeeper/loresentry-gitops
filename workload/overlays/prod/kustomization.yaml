@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: prod
+
+resources:
+  - namespace.yaml
+  - ../../base
+  - ingress.yaml
+
+images:
+  - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/gateway/api
+    newTag: bootstrap
+  - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/graph-rag/api
+    newTag: build-3-1
+
+replicas:
+  - name: gateway-api
+    count: 0
