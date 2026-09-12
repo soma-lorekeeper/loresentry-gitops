@@ -18,7 +18,7 @@ ALB  (internet-facing, TLS terminated with an ACM certificate)
    │  HTTP
 gateway-api            ← the only Service behind the Ingress
    │  HTTP (ClusterIP)
-graph-rag-api, and future internal services
+ai-chat-api · authentication-api · content-api · graph-rag-api
 ```
 
 Only the gateway is reachable from outside. Every other service is `ClusterIP`,
@@ -63,6 +63,9 @@ git push
 │
 ├── platform/                          # cluster-wide infrastructure
 │   ├── kustomization.yaml
+│   ├── argocd/
+│   │   ├── kustomization.yaml
+│   │   └── ingress.yaml               # argocd.loresentry.com
 │   └── storage/
 │       ├── kustomization.yaml
 │       └── gp3-storage-class.yaml
@@ -75,10 +78,10 @@ git push
     │   │   ├── deployment.yaml
     │   │   ├── service.yaml
     │   │   └── poddisruptionbudget.yaml
+    │   ├── ai-chat/                   # each: kustomization, deployment, service
+    │   ├── authentication/
+    │   ├── content/
     │   └── graph-rag/
-    │       ├── kustomization.yaml
-    │       ├── deployment.yaml
-    │       └── service.yaml
     └── overlays/
         ├── prod/                      # the only environment deployed today
         │   ├── kustomization.yaml     # namespace, image tags, replica counts
@@ -94,7 +97,7 @@ git push
 | --- | --- |
 | `bootstrap/` | The root `Application`. Apply once; everything else follows from Git. |
 | `argocd-apps/` | Argo CD `Application` manifests. The root application points here. |
-| `platform/` | Cluster-wide infrastructure (storage classes). |
+| `platform/` | Cluster-wide infrastructure — storage classes, and the Argo CD dashboard Ingress. |
 | `workload/base/<service>/` | One service's Deployment and Service, with no namespace and no environment-specific values. |
 | `workload/overlays/<env>/` | Namespace, ingress, replica counts and image tags for one environment. |
 
@@ -189,7 +192,7 @@ service is mostly a copy of an existing one:
 
 | | Convention |
 | --- | --- |
-| ECR repository | `<service>/api` — e.g. `graph-rag/api`, `gateway/api` |
+| ECR repository | `<service>/api` — e.g. `content/api`, `gateway/api`. Tags are immutable. |
 | Base directory | `workload/base/<service>/` |
 | Deployment and Service name | `<service>-api` |
 | Container port | `8000`, named `http` |
@@ -221,6 +224,16 @@ this repository is written by automation.
 PodDisruptionBudget of `minAvailable: 1`, because it is a single point of failure
 for every public request.
 
+The gateway exposes one relay endpoint per internal service, so each call chain can
+be checked from outside without opening a route to the service itself:
+
+| Path | Reaches |
+| --- | --- |
+| `/graph` | `graph-rag-api` |
+| `/ai-chat` | `ai-chat-api` |
+| `/auth` | `authentication-api` |
+| `/content` | `content-api` |
+
 To reach an internal service directly — they are not routable from outside —
 port-forward instead of adding an Ingress:
 
@@ -228,6 +241,22 @@ port-forward instead of adding an Ingress:
 kubectl port-forward -n prod svc/graph-rag-api 8080:80
 curl localhost:8080/health
 ```
+
+## Capacity
+
+The cluster is a **single `r7i.large` node** (1930m allocatable CPU), so CPU
+requests are the binding constraint on scheduling — not memory, of which there is
+15Gi. With five services the requests total roughly 1460m, about 76%.
+
+New services therefore request `100m` CPU rather than copying `graph-rag`'s `250m`.
+A request is a scheduling reservation, not a usage cap: raising it on one service
+can leave a later Pod `Pending` with `Insufficient cpu` even while the node sits
+mostly idle.
+
+`gateway-api` runs 2 replicas with a `topologySpreadConstraints` on
+`topology.kubernetes.io/zone`, but on one node both replicas land together and the
+constraint buys nothing yet — `whenUnsatisfiable: ScheduleAnyway` means it is
+advisory. It starts to matter once the node group spans two zones.
 
 ## Adding the dev environment
 

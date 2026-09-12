@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-chat-api
+  labels:
+    app.kubernetes.io/name: ai-chat-api
+    app.kubernetes.io/part-of: lore-sentry
+spec:
+  type: ClusterIP
+  selector:
+    app: ai-chat-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
