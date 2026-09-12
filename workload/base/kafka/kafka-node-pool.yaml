@@ -1,0 +1,48 @@
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: broker
+  labels:
+    strimzi.io/cluster: lore-sentry
+    app.kubernetes.io/part-of: lore-sentry
+  annotations:
+    # The Kafka CRDs arrive from the strimzi-kafka-operator Application, which
+    # may still be syncing the first time this one runs.
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  replicas: 3
+  # Combined roles keep the cluster at three pods. Splitting controllers out
+  # would double that for no availability gain at this node count.
+  roles:
+    - controller
+    - broker
+  storage:
+    type: jbod
+    volumes:
+      - id: 0
+        type: persistent-claim
+        size: 10Gi
+        class: gp3
+        kraftMetadata: shared
+        deleteClaim: false
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: "1"
+      memory: 3Gi
+  jvmOptions:
+    -Xms: 1024m
+    -Xmx: 1024m
+  template:
+    pod:
+      # One broker per node, so a single node failure never takes out the
+      # in-sync replica majority.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              strimzi.io/cluster: lore-sentry

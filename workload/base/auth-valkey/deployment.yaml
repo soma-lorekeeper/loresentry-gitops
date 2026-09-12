@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-valkey
+  labels:
+    app.kubernetes.io/name: auth-valkey
+    app.kubernetes.io/part-of: lore-sentry
+spec:
+  replicas: 1
+  # A second replica would be a second independent cache, not a bigger one,
+  # so restarts replace the pod instead of running two at once.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: auth-valkey
+  template:
+    metadata:
+      labels:
+        app: auth-valkey
+        app.kubernetes.io/name: auth-valkey
+        app.kubernetes.io/part-of: lore-sentry
+    spec:
+      containers:
+        - name: valkey
+          image: valkey/valkey:9.0.6-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - exec valkey-server /etc/valkey/valkey.conf --requirepass "$VALKEY_PASSWORD"
+          env:
+            - name: VALKEY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: auth-valkey
+                  key: password
+          ports:
+            - name: valkey
+              containerPort: 6379
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - valkey-cli -a "$VALKEY_PASSWORD" --no-auth-warning ping | grep -q PONG
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - valkey-cli -a "$VALKEY_PASSWORD" --no-auth-warning ping | grep -q PONG
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: config
+              mountPath: /etc/valkey
+              readOnly: true
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: config
+          configMap:
+            name: auth-valkey
+        - name: data
+          emptyDir: {}

@@ -7,3 +7,5 @@ resources:
   - authentication
   - content
   - graph-rag
+  - auth-valkey
+  - kafka

@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: strimzi-kafka-operator
+  namespace: argocd
+  annotations:
+    # Ahead of workload-prod so the Kafka CRDs exist before the Kafka
+    # resources in that Application are applied.
+    argocd.argoproj.io/sync-wave: "-5"
+spec:
+  project: default
+
+  source:
+    repoURL: https://strimzi.io/charts/
+    chart: strimzi-kafka-operator
+    targetRevision: "1.2.0"
+    helm:
+      valuesObject:
+        watchNamespaces:
+          - prod
+
+        resources:
+          requests:
+            cpu: 200m
+            memory: 384Mi
+          limits:
+            cpu: 500m
+            memory: 768Mi
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: strimzi-system
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # The Kafka CRD is far past the size that a client-side apply can carry
+      # in its last-applied-configuration annotation.
+      - ServerSideApply=true

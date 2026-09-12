@@ -1,0 +1,37 @@
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: content.file.changed.v1
+  labels:
+    strimzi.io/cluster: lore-sentry
+    app.kubernetes.io/part-of: lore-sentry
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  # Producers key by projectId, so every file change inside one project lands
+  # on the same partition and reaches graph-rag in the order it happened.
+  partitions: 6
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+    retention.ms: 604800000
+    cleanup.policy: delete
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: content.file.changed.v1.dlq
+  labels:
+    strimzi.io/cluster: lore-sentry
+    app.kubernetes.io/part-of: lore-sentry
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  partitions: 3
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+    # Held far longer than the source topic; a poisoned event is only useful
+    # if it is still there when someone goes looking for it.
+    retention.ms: 2592000000
+    cleanup.policy: delete

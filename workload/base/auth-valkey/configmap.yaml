@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-valkey
+  labels:
+    app.kubernetes.io/name: auth-valkey
+    app.kubernetes.io/part-of: lore-sentry
+data:
+  valkey.conf: |
+    bind 0.0.0.0
+    protected-mode yes
+    port 6379
+
+    # Cache only. Nothing here survives a restart by design, so both
+    # persistence mechanisms stay off and no volume has to be durable.
+    save ""
+    appendonly no
+
+    # Roughly 75% of the container memory limit, leaving room for the
+    # copy-on-write and fragmentation overhead the limit also has to cover.
+    maxmemory 768mb
+    maxmemory-policy allkeys-lru
+
+    timeout 300
+    tcp-keepalive 60
