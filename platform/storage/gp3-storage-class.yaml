@@ -4,11 +4,12 @@ metadata:
   name: gp3
   annotations:
     storageclass.kubernetes.io/is-default-class: "true"
+    argocd.argoproj.io/sync-options: Replace=true,Force=true
 provisioner: ebs.csi.aws.com
 parameters:
   type: gp3
   encrypted: "true"
   fsType: ext4
 volumeBindingMode: WaitForFirstConsumer
-reclaimPolicy: Delete
+reclaimPolicy: Retain
 allowVolumeExpansion: true

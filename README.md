@@ -127,6 +127,27 @@ genuinely per-application: host, path, backend Service, and health check.
 All Ingresses share `group.name: lore-sentry`, so they merge into a single ALB
 instead of one ALB per Ingress.
 
+## Storage
+
+`gp3` is the default StorageClass and uses `reclaimPolicy: Retain`, so deleting a
+PVC leaves both the PersistentVolume and the underlying EBS volume in place. Data
+survives an accidental `kubectl delete pvc` or an Argo CD prune.
+
+The cost is that cleanup is manual. A PVC deletion leaves the PV in `Released`,
+where it is neither usable nor free:
+
+```bash
+kubectl get pv                       # look for STATUS Released
+kubectl delete pv <name>             # releases the Kubernetes object
+aws ec2 delete-volume --volume-id <vol-...>   # and the EBS volume itself
+```
+
+`reclaimPolicy` is immutable on a StorageClass, so the manifest carries
+`argocd.argoproj.io/sync-options: Replace=true,Force=true`. Without it Argo CD
+cannot apply a change to that field and the sync fails. Replacing the class does
+not touch existing volumes — a PersistentVolume records its own reclaim policy
+when it is provisioned and never re-reads the class.
+
 ## Service conventions
 
 Every service has the same shape, so the platform stays predictable and a new
