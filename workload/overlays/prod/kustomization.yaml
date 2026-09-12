@@ -18,7 +18,7 @@ images:
   - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/content/api
     newTag: build-2-1
   - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/graph-rag/api
-    newTag: build-5-1
+    newTag: build-6-1
 
 replicas:
   - name: gateway-api
