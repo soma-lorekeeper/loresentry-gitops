@@ -10,7 +10,7 @@ resources:
 
 images:
   - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/gateway/api
-    newTag: bootstrap
+    newTag: build-1-1
   - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/graph-rag/api
     newTag: build-4-1
 
