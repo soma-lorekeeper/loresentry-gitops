@@ -183,14 +183,12 @@ this repository is written by automation.
 
 `api.loresentry.com` routes to `gateway-api`, and to nothing else.
 
-`gateway-api` currently runs with `replicas: 0` because no `gateway/api` image has
-been built yet. A Deployment scaled to zero creates no pods, so there is no
-`ImagePullBackOff` noise to hide real failures. Once the first gateway image is
-pushed, change `count: 0` to `count: 2` under `replicas:` in
-`workload/overlays/prod/kustomization.yaml`.
+`gateway-api` runs 2 replicas spread across availability zones, with a
+PodDisruptionBudget of `minAvailable: 1`, because it is a single point of failure
+for every public request.
 
-Until then `api.loresentry.com` returns 503. To reach a service before the gateway
-exists, port-forward instead of exposing it:
+To reach an internal service directly — they are not routable from outside —
+port-forward instead of adding an Ingress:
 
 ```bash
 kubectl port-forward -n prod svc/graph-rag-api 8080:80
