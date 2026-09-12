@@ -12,7 +12,7 @@ images:
   - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/gateway/api
     newTag: bootstrap
   - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/graph-rag/api
-    newTag: build-3-1
+    newTag: build-4-1
 
 replicas:
   - name: gateway-api
