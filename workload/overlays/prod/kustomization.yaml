@@ -5,6 +5,7 @@ namespace: prod
 
 resources:
   - namespace.yaml
+  - rbac.yaml
   - ../../base
   - ingress.yaml
 
