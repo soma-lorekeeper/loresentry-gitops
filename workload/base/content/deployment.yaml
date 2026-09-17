@@ -17,6 +17,7 @@ spec:
         app.kubernetes.io/name: content-api
         app.kubernetes.io/part-of: lore-sentry
     spec:
+      serviceAccountName: content-api
       containers:
         - name: api
           image: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/content/api:bootstrap
@@ -47,6 +48,21 @@ spec:
                 secretKeyRef:
                   name: content-db
                   key: password
+            - name: MEDIA_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: media
+                  key: bucket
+            - name: MEDIA_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: media
+                  key: region
+            - name: MEDIA_PUBLIC_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: media
+                  key: public-base-url
           ports:
             - name: http
               containerPort: 8000
