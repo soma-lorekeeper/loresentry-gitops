@@ -84,10 +84,13 @@ git push
     │   │   └── poddisruptionbudget.yaml
     │   ├── ai-chat/                   # each: kustomization, deployment, service
     │   ├── authentication/
-    │   ├── content/
+    │   ├── content/                   # + serviceaccount (Pod Identity)
     │   ├── graph-rag/
     │   ├── auth-valkey/               # + configmap
-    │   └── kafka/                     # Kafka, KafkaNodePool, KafkaTopic
+    │   ├── kafka/                     # Kafka, KafkaNodePool, KafkaTopic
+    │   ├── postgres/                  # configmap: RDS host, logical DB names
+    │   ├── neptune/                   # configmap: Neptune endpoints
+    │   └── media/                     # configmap: S3 bucket, CloudFront host
     │
     └── overlays/
         ├── prod/                      # the only environment deployed today
@@ -358,6 +361,34 @@ in the cluster but nothing here creates it, so a rebuild from Git alone would le
 the pod unable to start. Closing that gap needs a sealed-secret, External Secrets, or
 equivalent.
 
+## User media — S3 + CloudFront
+
+User-uploaded images live in the S3 bucket `loresentry-media-prod-<account>` and
+are served from `media.loresentry.com` through CloudFront. Neither is a Kubernetes
+resource; what this repository holds is the wiring on the cluster side.
+
+| | |
+| --- | --- |
+| `workload/base/media/configmap.yaml` | Bucket name, region, public base URL. Non-secret, so it lives in Git like `postgres` and `neptune`. |
+| `workload/base/content/serviceaccount.yaml` | `content-api`. An **EKS Pod Identity association** maps it to the IAM role `lore-sentry-content-role`. |
+| `content` Deployment | `serviceAccountName: content-api` and `MEDIA_*` env from the ConfigMap. |
+
+The browser uploads straight to S3 with a presigned URL that `content-api` issues,
+so no image bytes cross the gateway or the ALB. There is **no AWS access key
+anywhere**: the pod's credentials come from Pod Identity, the same mechanism the
+EBS CSI driver and the load balancer controller already use. If the association is
+missing, the pod still starts and `/health` is fine — only the presign call fails
+with a credentials error.
+
+This bucket is separate from the frontend bucket on purpose. The frontend CI runs
+`aws s3 sync --delete` and invalidates `/*` on every deploy; sharing a bucket or a
+distribution with user data would delete the images and flush their cache each
+release.
+
+The AWS side — bucket, CORS, lifecycle, IAM, Pod Identity association, CloudFront
+distribution and bucket policy — is created by `docs/aws/setup-media.sh` in
+`loresentry-content`, and documented in `docs/IMAGE_UPLOAD_S3.md`.
+
 ## Capacity
 
 The node group is **3 × `r7i.large`**, 1930m allocatable CPU each (5790m total),
@@ -407,6 +438,11 @@ cluster is not reproducible from this repository alone until that is addressed.
 `prod` and failing, but no PostgreSQL manifests exist in this repository, so it came
 from outside GitOps. Anything applied by hand is invisible to Argo CD and will not
 survive a cluster rebuild.
+
+**The Pod Identity association for `content-api` is not in Git.** It is an EKS
+API object (`aws eks create-pod-identity-association`), not a Kubernetes one, so
+like the RDS instance it can only be recorded here, not declared. Rebuilding the
+cluster means re-running `setup-media.sh` in `loresentry-content`.
 
 **Kafka's listener has no TLS or authentication.** It is `type: internal`, so it is
 only reachable from inside the cluster, but any pod in any namespace can reach it.

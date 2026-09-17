@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: media
+  labels:
+    app.kubernetes.io/name: media
+    app.kubernetes.io/part-of: lore-sentry
+data:
+  bucket: loresentry-media-prod-197179613039
+  region: ap-northeast-2
+  public-base-url: https://media.loresentry.com
