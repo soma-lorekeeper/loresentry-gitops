@@ -17,7 +17,7 @@ images:
   - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/authentication/api
     newTag: build-5-1
   - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/content/api
-    newTag: build-10-1
+    newTag: build-11-1
   - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/graph-rag/api
     newTag: build-6-1
 
