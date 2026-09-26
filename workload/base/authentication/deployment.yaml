@@ -53,7 +53,7 @@ spec:
             - name: SPRING_PROFILES_ACTIVE
               value: prod
             - name: AUTH_JWT_PUBLIC_KEY_PATH
-              value: /etc/auth/jwt/auth-public.pem
+              value: /app/keys/auth-public.pem
             - name: SPRING_DATA_REDIS_HOST
               value: auth-valkey
             - name: SPRING_DATA_REDIS_PORT
@@ -89,7 +89,7 @@ spec:
           volumeMounts:
             # 공개키는 비밀이 아니므로 ConfigMap 이다. 개인키는 Secret 의 env 로만 들어간다.
             - name: jwt-public
-              mountPath: /etc/auth/jwt
+              mountPath: /app/keys
               readOnly: true
       volumes:
         - name: jwt-public

@@ -34,7 +34,7 @@ spec:
               value: prod
             # auth 와 같은 키 쌍의 공개키다. BFF 는 개인키를 갖지 않는다.
             - name: BFF_JWT_PUBLIC_KEY
-              value: /etc/bff/jwt/auth-public.pem
+              value: /app/keys/auth-public.pem
             - name: BFF_SESSION_REDIS_HOST
               value: auth-valkey
             - name: BFF_SESSION_REDIS_PORT
@@ -69,7 +69,7 @@ spec:
               memory: 512Mi
           volumeMounts:
             - name: jwt-public
-              mountPath: /etc/bff/jwt
+              mountPath: /app/keys
               readOnly: true
       volumes:
         - name: jwt-public

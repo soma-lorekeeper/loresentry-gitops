@@ -27,8 +27,33 @@ BFF 에 `+@read` 전체를 주지 않는다. `auth:refresh:*` 와 OAuth 임시 �
 `SET`·`DEL`·`EXPIRE`·`EVAL`·`KEYS` 는 세션 상태를 바꿀 수 있다. 권한 목록의 근거는
 `loresentry-gateway/docs/OPERATIONS.md` 에 있다.
 
+## `requirepass` 를 쓰지 않는다 — 쓰면 안 되는 이유
+
+**`aclfile` 을 설정하면 valkey 가 `requirepass` 를 무시하고 `default` 를 `nopass +@all` 로 둔다.**
+로컬 valkey 9.0.6 에서 확인했다.
+
+```text
+비밀번호 없이 ping   → PONG
+비밀번호 없이 SET    → OK
+```
+
+즉 `--requirepass` 를 넘기면 비밀번호가 걸린 것처럼 보이면서 실제로는 **클러스터 어느 pod 든
+비밀번호 없이 세션을 읽고 쓸 수 있다.** 그래서 그 인자를 넘기지 않고, 접근 통제는 ACL 파일
+하나가 맡는다. 기존 `auth-valkey` Secret 의 `password` 는 이제 쓰이지 않는다.
+
 ## ACL 파일은 Git 에 없다
 
-비밀번호가 줄 안에 들어가므로 `users.acl` 전체를 Secret `authentication-valkey-acl` 로 만든다.
-내용 형식은 위 문서와 `AUTH_BFF_SECRETS.md` §5 를 따른다. `default` 계정은 끈다 —
-`requirepass` 만 남겨 두면 그 비밀번호를 아는 누구나 모든 키에 접근할 수 있다.
+비밀번호 해시가 줄 안에 들어가므로 `users.acl` 전체를 Secret `authentication-valkey-acl` 로 만든다.
+
+```text
+user default off
+user probe on nopass -@all +ping +auth +hello +client|setinfo +client|setname
+user authentication reset on #<sha256> ~auth:session:* ~auth:oauth:* -@all +auth +ping +hello ...
+user bff reset on #<sha256> ~auth:session:* -@all +auth +ping +hello ... +get
+```
+
+- `default off` 가 무인증 개방을 닫는다.
+- `probe` 는 `default` 를 끈 뒤 readiness·liveness 프로브가 붙을 수 있게 하는 계정이다. PING
+  말고는 아무것도 못 하고 비밀 값이 없으므로 프로브에 주입할 자격 증명도 없다.
+- **ACL 파일은 주석을 허용하지 않는다.** `#` 로 시작하는 줄이 있으면
+  `Aborting Valkey startup because of ACL errors` 로 기동이 거부된다. 이것도 로컬에서 확인했다.

@@ -25,27 +25,25 @@ spec:
         - name: valkey
           image: valkey/valkey:9.0.6-alpine
           imagePullPolicy: IfNotPresent
+          # requirepass 를 넘기지 않는다. aclfile 을 쓰면 valkey 가 requirepass 를 무시하고
+          # default 를 nopass +@all 로 두므로, 그 조합은 비밀번호가 걸린 것처럼 보이면서
+          # 실제로는 클러스터 어느 pod 든 비밀번호 없이 세션을 읽고 쓸 수 있는 상태가 된다.
+          # 로컬 valkey 9.0.6 에서 확인했다. 접근 통제는 ACL 파일 하나가 맡는다.
           command:
             - sh
             - -c
-            - exec valkey-server /etc/valkey/valkey.conf --requirepass "$VALKEY_PASSWORD"
-          env:
-            # requirepass 는 default 계정용으로 남겨 둔다. 실제 서비스는 ACL 파일의
-            # authentication·bff 계정으로 붙으므로 이 값으로는 세션 키에 닿지 못한다.
-            - name: VALKEY_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: auth-valkey
-                  key: password
+            - exec valkey-server /etc/valkey/valkey.conf
           ports:
             - name: valkey
               containerPort: 6379
+          # default 를 껐으므로 프로브도 계정이 필요하다. ACL 의 probe 계정은 PING 만
+          # 할 수 있고 비밀 값이 없어, 프로브에 주입할 자격 증명도 없다.
           readinessProbe:
             exec:
               command:
                 - sh
                 - -c
-                - valkey-cli -a "$VALKEY_PASSWORD" --no-auth-warning ping | grep -q PONG
+                - valkey-cli --user probe --pass probe --no-auth-warning ping | grep -q PONG
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
@@ -53,7 +51,7 @@ spec:
               command:
                 - sh
                 - -c
-                - valkey-cli -a "$VALKEY_PASSWORD" --no-auth-warning ping | grep -q PONG
+                - valkey-cli --user probe --pass probe --no-auth-warning ping | grep -q PONG
             initialDelaySeconds: 20
             periodSeconds: 20
           resources:
