@@ -11,15 +11,28 @@ data:
     protected-mode yes
     port 6379
 
-    # Cache only. Nothing here survives a restart by design, so both
-    # persistence mechanisms stay off and no volume has to be durable.
-    save ""
-    appendonly no
+    # This is no longer a pure cache. Auth keeps the single active session per
+    # user here, so losing the contents logs everyone out. Append-only is on and
+    # the volume is a PVC, which turns a pod restart from a mass logout into a
+    # reload. It is still not a durability guarantee: the store can be lost and
+    # the answer to that is re-login, not restoring a snapshot, because an old
+    # snapshot would resurrect sessions that were deliberately revoked.
+    save 900 1
+    appendonly yes
+    appendfsync everysec
+
+    # ACL accounts come from a mounted file so the two services get separate
+    # credentials. BFF may only read session keys; see the file for why.
+    aclfile /etc/valkey/acl/users.acl
 
     # Roughly 75% of the container memory limit, leaving room for the
     # copy-on-write and fragmentation overhead the limit also has to cover.
     maxmemory 768mb
-    maxmemory-policy allkeys-lru
+    # Sessions are not a cache any more: evicting one logs that user out with no
+    # warning. Only keys that carry a TTL may be dropped under pressure, and
+    # running out of memory should fail a write loudly instead of silently
+    # signing someone out.
+    maxmemory-policy volatile-ttl
 
     timeout 300
     tcp-keepalive 60

@@ -30,6 +30,8 @@ spec:
             - -c
             - exec valkey-server /etc/valkey/valkey.conf --requirepass "$VALKEY_PASSWORD"
           env:
+            # requirepass 는 default 계정용으로 남겨 둔다. 실제 서비스는 ACL 파일의
+            # authentication·bff 계정으로 붙으므로 이 값으로는 세션 키에 닿지 못한다.
             - name: VALKEY_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -71,11 +73,19 @@ spec:
             - name: config
               mountPath: /etc/valkey
               readOnly: true
+            - name: acl
+              mountPath: /etc/valkey/acl
+              readOnly: true
             - name: data
               mountPath: /data
       volumes:
         - name: config
           configMap:
             name: auth-valkey
+        - name: acl
+          secret:
+            secretName: authentication-valkey-acl
         - name: data
-          emptyDir: {}
+          # emptyDir 이었다. 세션이 여기 있으므로 pod 재시작이 전원 로그아웃이 된다.
+          persistentVolumeClaim:
+            claimName: auth-valkey-data
