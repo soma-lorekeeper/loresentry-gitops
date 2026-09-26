@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: auth-valkey-data
+  labels:
+    app.kubernetes.io/name: auth-valkey
+    app.kubernetes.io/part-of: lore-sentry
+spec:
+  accessModes:
+    # gp3 is ReadWriteOnce and the Deployment uses Recreate, so only one pod
+    # ever holds the volume. A second replica would be a second store anyway.
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 4Gi
+  storageClassName: gp3

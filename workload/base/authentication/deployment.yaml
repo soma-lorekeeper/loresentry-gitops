@@ -47,6 +47,23 @@ spec:
                 secretKeyRef:
                   name: authentication-db
                   key: password
+            # Google OAuth 와 JWT 서명 설정. auth 의 GoogleProperties·JwtProperties 가
+            # @NotBlank 이므로 하나라도 비면 컨텍스트가 뜨지 않는다 — 값이 없으면 기동 실패다.
+            # 세션 저장소 주소도 여기 있다. 기본값(localhost)으로는 기동만 되고 로그인이 실패한다.
+            - name: SPRING_PROFILES_ACTIVE
+              value: prod
+            - name: AUTH_JWT_PUBLIC_KEY_PATH
+              value: /app/keys/auth-public.pem
+            - name: SPRING_DATA_REDIS_HOST
+              value: auth-valkey
+            - name: SPRING_DATA_REDIS_PORT
+              value: "6379"
+          envFrom:
+            # AUTH_GOOGLE_CLIENT_ID · CLIENT_SECRET · REDIRECT_URI,
+            # AUTH_JWT_PRIVATE_KEY_BASE64 · KEY_ID,
+            # SPRING_DATA_REDIS_USERNAME · PASSWORD
+            - secretRef:
+                name: authentication-runtime
           ports:
             - name: http
               containerPort: 8000
@@ -69,3 +86,12 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+          volumeMounts:
+            # 공개키는 비밀이 아니므로 ConfigMap 이다. 개인키는 Secret 의 env 로만 들어간다.
+            - name: jwt-public
+              mountPath: /app/keys
+              readOnly: true
+      volumes:
+        - name: jwt-public
+          configMap:
+            name: authentication-jwt-public
