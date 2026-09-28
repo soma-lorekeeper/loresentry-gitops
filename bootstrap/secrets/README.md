@@ -71,8 +71,13 @@ kubectl -n prod create secret generic gateway-runtime \
 
 ```text
 user default off
-user authentication on >AUTH_PASSWORD ~auth:* +@all -@dangerous +eval +evalsha +script
-user bff on >BFF_PASSWORD ~auth:session:* -@all +get +auth +ping +hello +client|setinfo +client|setname
+user probe on nopass -@all +ping +auth +hello +client|setinfo +client|setname
+user authentication reset on >AUTH_PASSWORD ~auth:session:* ~auth:oauth:* -@all \
+  +auth +ping +hello +client|setinfo +client|setname \
+  +get +set +del +getdel +eval +pttl +time
+user bff reset on >BFF_PASSWORD ~auth:session:* -@all \
+  +auth +ping +hello +client|setinfo +client|setname \
+  +get +eval +pttl +pexpireat +time
 ```
 
 ```bash
@@ -80,10 +85,41 @@ kubectl -n prod create secret generic authentication-valkey-acl \
   --from-file=users.acl=/path/to/users.acl
 ```
 
+### 명령 목록은 스크립트에서 나온다 — 짐작하지 않는다
+
+**Lua 스크립트 안에서 부르는 명령도 ACL 검사를 받는다.** 그래서 `+eval` 만 주면 안 되고, 스크립트가
+쓰는 명령을 하나씩 줘야 한다. 지금 필요한 것은 이 두 파일이 정한다.
+
+| 스크립트 | 부르는 명령 | 주는 대상 |
+|---|---|---|
+| `loresentry-authentication/.../redis/login-session.lua` | `GET` `SET` `PTTL` `TIME` | `authentication` |
+| `loresentry-authentication/.../redis/revoke-session.lua` | `DEL` `PTTL` | `authentication` |
+| `loresentry-gateway/.../redis/verify-session.lua` | `PTTL` `PEXPIREAT` `TIME` | `bff` |
+
+**`+pttl` 을 빠뜨리면 첫 로그인은 되고 재로그인만 깨진다.** 로그인 스크립트는 그 사용자의 기존
+세션 기록이 있을 때만 `PTTL` 을 부르기 때문이다. 그래서 처음 배포할 때는 정상으로 보이고, 두 번째
+로그인에서 `/login?result=unavailable` 로 떨어진다. 실제로 그렇게 겪었다
+(`docs/CONTENT_PROJECT_API.md` §0.16).
+
 `default off` 가 중요하다. `requirepass` 만 남겨 두면 그 비밀번호를 아는 누구나 모든 키에 닿는다.
 
-BFF 에 `+@read` 전체를 주지 않는다. `auth:refresh:*` 와 OAuth 임시 키는 BFF 가 볼 이유가 없고,
-`SET`·`DEL`·`EXPIRE`·`EVAL`·`KEYS` 는 세션 상태를 바꿀 수 있다.
+BFF 에 `+@read` 전체를 주지 않는다. OAuth 임시 키(`auth:oauth:*`)는 BFF 가 볼 이유가 없다.
+다만 BFF 도 세션을 **연장**해야 하므로 `+pexpireat` 은 필요하다 — 읽기 전용으로 둘 수 없다.
+
+### 고칠 때
+
+ACL 파일만 바꾸면 valkey 가 스스로 다시 읽지 않는다. `ACL LOAD` 는 관리 권한이 필요하고 그런
+계정을 두지 않았으므로, **Secret 을 갱신한 뒤 파드를 재시작한다.** 세션은 PVC 와 AOF 에 남아
+재시작을 견딘다.
+
+```bash
+kubectl -n prod get secret authentication-valkey-acl -o jsonpath='{.data.users\.acl}' \
+  | base64 -d > /tmp/users.acl          # 편집한다
+kubectl -n prod create secret generic authentication-valkey-acl \
+  --from-file=users.acl=/tmp/users.acl --dry-run=client -o yaml | kubectl -n prod apply -f -
+rm /tmp/users.acl
+kubectl -n prod rollout restart deploy/auth-valkey
+```
 
 ## 5. 확인
 
