@@ -1,26 +1,48 @@
+# Topics from the message contract. Names follow
+# <publisher>.<subject>.<past-tense event>.v<N>; a breaking change is a new .vN
+# topic beside the old one, never an edit to this one.
+#
+# Dead-letter topics are per consumer: <source topic>.<consumer>.dlq. A shared
+# DLQ would mix the failures of different consumers, and replaying it would hand
+# events again to consumers that already succeeded. Every DLQ has three
+# partitions; consumers publish to it with partition -1, so the key picks one.
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
-  name: content.file.changed.v1
+  name: content.project.changed.v1
   labels:
     strimzi.io/cluster: lore-sentry
     app.kubernetes.io/part-of: lore-sentry
   annotations:
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
-  # Producers key by projectId, so every file change inside one project lands
-  # on the same partition and reaches graph-rag in the order it happened.
+  # FileChanged and ProjectDeleted, keyed by project_id, so every change inside
+  # one project reaches each consumer in the order it was committed. Adding
+  # partitions later would remap keys and break that order, so the count is
+  # part of the contract.
   partitions: 6
   replicas: 3
   config:
     min.insync.replicas: 2
-    retention.ms: 604800000
     cleanup.policy: delete
+    # Events carry manuscript text, which the privacy policy says to delete
+    # without delay. Only closed segments are deleted, so segments roll daily
+    # and a record lives at most about four days.
+    retention.ms: 259200000
+    segment.ms: 86400000
+    # Per-partition cap, so a burst of large saves cannot fill the broker disk.
+    # Every broker holds every partition: 6 x (512MiB + one open segment) is at
+    # most 3.75GiB per broker.
+    retention.bytes: 536870912
+    segment.bytes: 134217728
+    # A change event with a 1M-character body is about 3MB. Clients are set to
+    # the same 4MiB, so the broker is never the first to reject a record.
+    max.message.bytes: 4194304
 ---
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
-  name: content.file.changed.v1.dlq
+  name: content.project.changed.v1.graph-rag.dlq
   labels:
     strimzi.io/cluster: lore-sentry
     app.kubernetes.io/part-of: lore-sentry
@@ -31,7 +53,152 @@ spec:
   replicas: 3
   config:
     min.insync.replicas: 2
-    # Held far longer than the source topic; a poisoned event is only useful
-    # if it is still there when someone goes looking for it.
-    retention.ms: 2592000000
     cleanup.policy: delete
+    # Still manuscript text, so a week instead of the 30 days other DLQs get,
+    # rolled daily for the same reason as the source topic.
+    retention.ms: 604800000
+    segment.ms: 86400000
+    # A consumer that fails every event would otherwise copy the source topic
+    # here for a week. All three brokers hold every replica and the KRaft
+    # metadata shares their disk, so they would fill up and stop together.
+    retention.bytes: 268435456
+    segment.bytes: 67108864
+    # Must accept anything the source topic accepted.
+    max.message.bytes: 4194304
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: content.project.changed.v1.search.dlq
+  labels:
+    strimzi.io/cluster: lore-sentry
+    app.kubernetes.io/part-of: lore-sentry
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  # Declared ahead of the search service. Same limits as the graph-rag DLQ of
+  # this topic, for the same reasons.
+  partitions: 3
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+    cleanup.policy: delete
+    retention.ms: 604800000
+    segment.ms: 86400000
+    retention.bytes: 268435456
+    segment.bytes: 67108864
+    max.message.bytes: 4194304
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: content.graph-refresh.requested.v1
+  labels:
+    strimzi.io/cluster: lore-sentry
+    app.kubernetes.io/part-of: lore-sentry
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  # GraphRefreshRequested, keyed by project_id so one project's refreshes are
+  # handled one at a time, in order. The input itself is in S3 (claim check),
+  # so the default 1MB message limit is plenty.
+  partitions: 3
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+    cleanup.policy: delete
+    retention.ms: 604800000
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: content.graph-refresh.requested.v1.graph-rag.dlq
+  labels:
+    strimzi.io/cluster: lore-sentry
+    app.kubernetes.io/part-of: lore-sentry
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  partitions: 3
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+    cleanup.policy: delete
+    # Held far longer than the source topic; a poisoned event is only useful
+    # if it is still there when someone goes looking for it. Only ids and S3
+    # keys are in here, no manuscript text.
+    retention.ms: 2592000000
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: graph-rag.graph-refresh.completed.v1
+  labels:
+    strimzi.io/cluster: lore-sentry
+    app.kubernetes.io/part-of: lore-sentry
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  # GraphRefreshCompleted, keyed by project_id like the request it answers.
+  # A result is matched to its request by request_id in the payload, not by key.
+  partitions: 3
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+    cleanup.policy: delete
+    retention.ms: 604800000
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: graph-rag.graph-refresh.completed.v1.content.dlq
+  labels:
+    strimzi.io/cluster: lore-sentry
+    app.kubernetes.io/part-of: lore-sentry
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  partitions: 3
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+    cleanup.policy: delete
+    # 30 days, like every DLQ that carries no manuscript text.
+    retention.ms: 2592000000
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: auth.user.deleted.v1
+  labels:
+    strimzi.io/cluster: lore-sentry
+    app.kubernetes.io/part-of: lore-sentry
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  # UserDeleted, keyed by user_id. Declared ahead of its publisher: account
+  # deletion still runs as synchronous HTTP through the gateway.
+  partitions: 3
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+    cleanup.policy: delete
+    retention.ms: 604800000
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: auth.user.deleted.v1.content.dlq
+  labels:
+    strimzi.io/cluster: lore-sentry
+    app.kubernetes.io/part-of: lore-sentry
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  partitions: 3
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+    cleanup.policy: delete
+    # 30 days, like every DLQ that carries no manuscript text.
+    retention.ms: 2592000000

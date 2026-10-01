@@ -5,3 +5,4 @@ resources:
   - kafka-node-pool.yaml
   - kafka.yaml
   - topics.yaml
+  - configmap.yaml
