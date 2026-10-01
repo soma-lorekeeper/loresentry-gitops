@@ -24,6 +24,22 @@ spec:
       transaction.state.log.replication.factor: 3
       transaction.state.log.min.isr: 2
       auto.create.topics.enable: false
+    metricsConfig:
+      type: jmxPrometheusExporter
+      valueFrom:
+        configMapKeyRef:
+          name: lore-sentry-kafka-metrics
+          key: kafka-metrics-config.yml
+  kafkaExporter:
+    topicRegex: ".*"
+    groupRegex: ".*"
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
   entityOperator:
     topicOperator:
       resources:
