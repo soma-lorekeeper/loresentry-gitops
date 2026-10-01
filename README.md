@@ -87,7 +87,7 @@ git push
     │   ├── content/                   # + serviceaccount (Pod Identity)
     │   ├── graph-rag/
     │   ├── auth-valkey/               # + configmap
-    │   ├── kafka/                     # Kafka, KafkaNodePool, KafkaTopic
+    │   ├── kafka/                     # Kafka, KafkaNodePool, KafkaTopic, configmap: bootstrap address
     │   ├── postgres/                  # configmap: RDS host, logical DB names
     │   ├── neptune/                   # configmap: Neptune endpoints
     │   └── media/                     # configmap: S3 bucket, CloudFront host
@@ -288,6 +288,7 @@ use them rather than created by hand in a running cluster.
 | Nodes | `KafkaNodePool` `broker`, 3 replicas, **combined** `controller` + `broker` roles |
 | Storage | JBOD, one 10Gi `gp3` persistent-claim per broker, `deleteClaim: false` |
 | Listener | `plain` 9092, internal, no TLS |
+| Bootstrap | `lore-sentry-kafka-bootstrap:9092`, also in the `kafka` ConfigMap as `bootstrap-servers` |
 | Durability | `default.replication.factor: 3`, `min.insync.replicas: 2` |
 
 Combined roles keep the cluster at three pods. Splitting controllers into their own
@@ -302,7 +303,16 @@ topologySpreadConstraints:
   - maxSkew: 1
     topologyKey: kubernetes.io/hostname
     whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        strimzi.io/cluster: lore-sentry
+        strimzi.io/pool-name: broker
 ```
+
+The selector names the pool, not only the cluster. `strimzi.io/cluster` alone also
+matches the entity-operator pod, and four pods on three nodes may split 2/1/1 with
+two brokers on one node — `maxSkew: 1` only means "one per node" when the brokers
+are the only pods it counts.
 
 `DoNotSchedule` rather than `ScheduleAnyway`: a fourth broker crammed onto an
 existing node would silently void the availability argument, so it is better for it
@@ -314,21 +324,60 @@ name is a topic nobody declared and nobody owns.
 
 ### Topics
 
-| Topic | Partitions | Retention | |
-| --- | --- | --- | --- |
-| `content.file.changed.v1` | 6 | 7 days | File events `content` publishes and `graph-rag` consumes. |
-| `content.file.changed.v1.dlq` | 3 | 30 days | Poisoned events. |
+Topics follow the message contract in the team's Kafka design document, which also
+defines the event payloads and headers.
 
-Producers key by `projectId`, not `fileId`, so every change inside one project lands
-on the same partition and reaches `graph-rag` in the order it happened. That is what
-the graph needs to converge — ordering *within* a project matters, ordering *across*
-projects does not.
+| Topic | Key | Partitions | Retention | |
+| --- | --- | --- | --- | --- |
+| `content.project.changed.v1` | `project_id` | 6 | 3 days or 512 MiB per partition | `FileChanged`, `ProjectDeleted`. `content` publishes; `graph-rag` and `search` consume. |
+| `content.graph-refresh.requested.v1` | `project_id` | 3 | 7 days | `content` asks `graph-rag` to refresh a project's graph. The input is in S3. |
+| `graph-rag.graph-refresh.completed.v1` | `project_id` | 3 | 7 days | `graph-rag` reports the result back to `content`. |
+| `auth.user.deleted.v1` | `user_id` | 3 | 7 days | `auth` tells `content` an account is gone. No publisher yet: account deletion is synchronous HTTP through the gateway today. |
+| `content.project.changed.v1.graph-rag.dlq` | | 3 | 7 days or 256 MiB per partition | |
+| `content.project.changed.v1.search.dlq` | | 3 | 7 days or 256 MiB per partition | Declared ahead of the `search` service. |
+| `content.graph-refresh.requested.v1.graph-rag.dlq` | | 3 | 30 days | |
+| `graph-rag.graph-refresh.completed.v1.content.dlq` | | 3 | 30 days | |
+| `auth.user.deleted.v1.content.dlq` | | 3 | 30 days | |
 
-The DLQ is held far longer than the source topic on purpose: a poisoned event is
-only useful if it is still there when someone goes looking for it.
+Producers key every project-scoped topic by `project_id`, not by file, so every
+change inside one project lands on the same partition and reaches each consumer in
+the order it was committed. That is what the graph needs to converge — ordering
+*within* a project matters, ordering *across* projects does not.
+`auth.user.deleted.v1` is keyed by `user_id`. Adding partitions remaps keys, so a
+partition count is part of a topic's contract: changing it means a new topic, not an
+edit.
+
+`content.project.changed.v1` carries manuscript text, which the privacy policy says
+to delete without delay, so it keeps three days rather than seven. Kafka deletes
+only closed segments, so the topic rolls a segment a day and a record lives at most
+about four days. It is also capped at 512 MiB per partition, whichever limit comes
+first; a consumer that falls further behind than that on one partition loses events
+and has to resync from `content`. Messages may be up to 4 MiB
+(`max.message.bytes: 4194304`), because a file with a million-character body is
+about 3 MB. Producers and consumers set matching limits in their own configuration.
+
+Dead-letter topics are per consumer, `<source topic>.<consumer>.dlq`. Failures
+belong to a consumer — Neptune down for `graph-rag`, the index for `search` — and
+replaying a shared DLQ into its source would hand events again to consumers that
+already succeeded. Each DLQ has three partitions; consumers publish to it with
+partition `-1`, so the key picks one.
+
+A DLQ is held far longer than its source on purpose: a poisoned event is only useful
+if it is still there when someone goes looking for it. The two DLQs of
+`content.project.changed.v1` are the exception. They hold manuscript text, so they
+keep seven days, and they are capped at 256 MiB per partition so that a consumer
+dead-lettering everything cannot copy the source topic onto every broker.
+
+Every broker holds a replica of every partition, so these caps bound each broker's
+disk: at most about 3.75 GiB for `content.project.changed.v1` (six partitions of
+512 MiB plus one open segment each) and about 1.9 GiB for its two DLQs, out of the
+10Gi volume the KRaft metadata log also lives on.
+
+Topics without `segment.ms` roll a segment weekly, the broker default, so their
+retention is a lower bound: data can stay up to about a week past it.
 
 The `.v1` suffix is part of the name, so a breaking schema change becomes
-`content.file.changed.v2` alongside the old topic rather than a silent
+`content.project.changed.v2` alongside the old topic rather than a silent
 reinterpretation of the same one.
 
 Both broker PVCs and the StorageClass protect the data twice: `deleteClaim: false`
@@ -424,7 +473,7 @@ not the zone one.
 ## Known issues
 
 **`strimzi-kafka-operator` reports `OutOfSync` on the `kafkas.kafka.strimzi.io`
-CRD.** The Application is `Healthy`, the brokers run, and both topics report
+CRD.** The Application is `Healthy`, the brokers run, and the topics report
 `Ready: True`, so this is cosmetic rather than broken. The live CRD is ~800KB, past
 the point where Argo CD's diffing behaves cleanly; the Application already sets
 `ServerSideApply=true` for the related reason that a client-side apply cannot carry
