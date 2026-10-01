@@ -20,7 +20,7 @@ ACL 을 파일로 마운트해 두 서비스가 서로 다른 자격 증명을 �
 
 | 계정 | 권한 | 이유 |
 |---|---|---|
-| `authentication` | 자기 키의 읽기·쓰기·Lua | 세션과 OAuth 상태를 만들고 회전시킨다 |
+| `authentication` | 자기 키의 읽기·쓰기·Lua | 세션·OAuth 상태·약관 동의 대기를 만들고 회전·폐기한다 |
 | `bff` | `~auth:session:*` 에 `+get` 만 | 요청마다 세션이 살아 있는지 확인할 뿐이다 |
 
 BFF 에 `+@read` 전체를 주지 않는다. `auth:refresh:*` 와 OAuth 임시 키는 BFF 가 볼 이유가 없고,
@@ -48,10 +48,15 @@ BFF 에 `+@read` 전체를 주지 않는다. `auth:refresh:*` 와 OAuth 임시 �
 ```text
 user default off
 user probe on nopass -@all +ping +auth +hello +client|setinfo +client|setname
-user authentication reset on #<sha256> ~auth:session:* ~auth:oauth:* -@all +auth +ping +hello ...
+user authentication reset on #<sha256> ~auth:session:* ~auth:oauth:* ~auth:consent:by-id:* -@all +auth +ping +hello ... +get +set +del +getdel +eval +evalsha +pttl +time
 user bff reset on #<sha256> ~auth:session:* -@all +auth +ping +hello ... +get
 ```
 
+- `authentication` 은 약관 동의 대기 `~auth:consent:by-id:*` 와 `+evalsha` 가 반드시 있어야 한다.
+  Spring Data Redis 의 스크립트 실행기는 `EVALSHA` 를 먼저 부르므로 `+eval` 만으로는 부족하다.
+  둘 중 하나라도 빠지면 Google 로그인이 모두 `result=unavailable` 로 끝난다(2026-10-01 운영 장애).
+- 파일을 바꾼 뒤에는 `ACL LOAD` 할 관리자 계정이 없으므로 `auth-valkey` 를 재시작해 반영한다.
+  AOF 가 PVC 에 있어 세션은 다시 읽힌다.
 - `default off` 가 무인증 개방을 닫는다.
 - `probe` 는 `default` 를 끈 뒤 readiness·liveness 프로브가 붙을 수 있게 하는 계정이다. PING
   말고는 아무것도 못 하고 비밀 값이 없으므로 프로브에 주입할 자격 증명도 없다.
