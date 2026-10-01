@@ -43,6 +43,10 @@ spec:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: DoNotSchedule
+          # Count brokers only. strimzi.io/cluster alone also matches the
+          # entity-operator pod, and with four pods on three nodes a 2/1/1
+          # split is allowed, so two brokers could end up on one node.
           labelSelector:
             matchLabels:
               strimzi.io/cluster: lore-sentry
+              strimzi.io/pool-name: broker
