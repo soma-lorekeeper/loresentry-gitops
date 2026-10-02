@@ -1,0 +1,28 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: lore-sentry-kafka
+  labels:
+    app.kubernetes.io/part-of: lore-sentry
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  selector:
+    matchLabels:
+      strimzi.io/cluster: lore-sentry
+      strimzi.io/kind: Kafka
+  podMetricsEndpoints:
+    - path: /metrics
+      port: tcp-prometheus
+      relabelings:
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(strimzi_io_.+)
+          replacement: $1
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: kubernetes_pod_name
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node_name
+        - sourceLabels: [__meta_kubernetes_pod_host_ip]
+          targetLabel: node_ip
