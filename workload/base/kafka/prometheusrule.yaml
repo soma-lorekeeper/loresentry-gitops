@@ -1,0 +1,79 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: lore-sentry-kafka
+  labels:
+    app.kubernetes.io/part-of: lore-sentry
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  groups:
+    - name: kafka-broker
+      rules:
+        - alert: KafkaUnderMinIsrPartitions
+          expr: sum by (namespace, strimzi_io_cluster) (kafka_server_replicamanager_underminisrpartitioncount) > 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: Kafka partitions are below min.insync.replicas
+            description: "{{ $value }} partition(s) in {{ $labels.strimzi_io_cluster }} cannot accept acks=all writes."
+        - alert: KafkaOfflinePartitions
+          expr: sum by (namespace, strimzi_io_cluster) (kafka_controller_kafkacontroller_offlinepartitionscount) > 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: Kafka partitions have no leader
+            description: "{{ $value }} partition(s) in {{ $labels.strimzi_io_cluster }} are offline."
+        - alert: KafkaUnderReplicatedPartitions
+          expr: sum by (namespace, strimzi_io_cluster) (kafka_server_replicamanager_underreplicatedpartitions) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Kafka partitions are under-replicated
+            description: "{{ $value }} partition(s) in {{ $labels.strimzi_io_cluster }} are missing replicas."
+        - alert: KafkaActiveControllerCount
+          expr: sum by (namespace, strimzi_io_cluster) (kafka_controller_kafkacontroller_activecontrollercount) != 1
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: Kafka does not have exactly one active controller
+            description: "{{ $labels.strimzi_io_cluster }} reports {{ $value }} active controllers."
+        - alert: KafkaBrokerScrapeDown
+          expr: up{namespace="prod", kubernetes_pod_name=~"lore-sentry-broker-[0-9]+"} == 0
+          for: 3m
+          labels:
+            severity: critical
+          annotations:
+            summary: Kafka broker metrics are unreachable
+            description: "Prometheus cannot scrape {{ $labels.kubernetes_pod_name }}."
+        - alert: KafkaBrokerDiskFilling
+          expr: |
+            kubelet_volume_stats_available_bytes{namespace="prod", persistentvolumeclaim=~"data-[0-9]+-lore-sentry-broker-[0-9]+"}
+              / kubelet_volume_stats_capacity_bytes{namespace="prod", persistentvolumeclaim=~"data-[0-9]+-lore-sentry-broker-[0-9]+"} < 0.15
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Kafka broker volume is almost full
+            description: "{{ $labels.persistentvolumeclaim }} has less than 15% free space."
+    - name: kafka-consumers
+      rules:
+        - alert: KafkaConsumerGroupLagHigh
+          expr: sum by (namespace, consumergroup, topic) (kafka_consumergroup_lag) > 1000
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Kafka consumer group is falling behind
+            description: "{{ $labels.consumergroup }} is {{ $value }} messages behind on {{ $labels.topic }}."
+        - alert: KafkaDeadLetterMessages
+          expr: sum by (namespace, topic) (increase(kafka_topic_partition_current_offset{topic=~".+\\.dlq"}[15m])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: Messages landed in a dead-letter topic
+            description: "{{ $value }} message(s) were written to {{ $labels.topic }} in the last 15 minutes."

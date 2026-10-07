@@ -61,6 +61,9 @@ git push
 │
 ├── argocd-apps/                       # one Application per component
 │   ├── aws-load-balancer-controller.yaml
+│   ├── kube-prometheus-stack.yaml
+│   ├── loki.yaml
+│   ├── alloy.yaml
 │   ├── strimzi-kafka-operator.yaml
 │   ├── platform.yaml
 │   └── workload-prod.yaml
@@ -122,6 +125,8 @@ Sync order comes from `argocd.argoproj.io/sync-wave` on each Application:
 | --- | --- | --- |
 | -10 | `platform` | The default StorageClass has to exist before anything claims a volume. |
 | -5 | `strimzi-kafka-operator` | Installs the Kafka CRDs that `workload-prod` then creates resources against. |
+| -5 | `kube-prometheus-stack` | Installs the monitoring CRDs that `loki`, `alloy` and `workload-prod` declare monitors and rules against. |
+| -4 | `loki`, `alloy` | |
 | 0 (no annotation) | `aws-load-balancer-controller` | |
 | 0 | `workload-prod` | |
 
@@ -275,6 +280,72 @@ port-forward instead of adding an Ingress:
 kubectl port-forward -n prod svc/graph-rag-api 8080:80
 curl localhost:8080/health
 ```
+
+## Observability — metrics and logs
+
+Everything runs in the `monitoring` namespace and is viewed in one Grafana at
+`grafana.loresentry.com`, which shares the `lore-sentry` ALB.
+
+| Application | Chart | What it runs |
+| --- | --- | --- |
+| `kube-prometheus-stack` | 91.8.2 | Prometheus (15d / 18GB, 20Gi `gp3`), Alertmanager, Grafana, node-exporter, kube-state-metrics, Prometheus Operator |
+| `loki` | 7.3.0 | Loki `SingleBinary`, chunks and index in S3 `loresentry-logs-prod-<account>`, 30-day retention |
+| `alloy` | 1.13.0 | DaemonSet tailing `/var/log/pods` on its own node and pushing to Loki |
+
+`kube-prometheus-stack` is wave -5 so the `ServiceMonitor`, `PodMonitor` and
+`PrometheusRule` CRDs exist before anything declares one. Resources in other
+Applications that use those kinds carry `SkipDryRunOnMissingResource=true`.
+
+Prometheus selects every `ServiceMonitor`, `PodMonitor` and `PrometheusRule` in
+the cluster, not only those with the chart's release label. A service declares its
+own monitor next to its Deployment in `workload/base/<service>/`, as Kafka does.
+
+EKS does not expose the control plane, so the controller-manager, scheduler, etcd
+and kube-proxy scrapes and their rules are off. Left on, they only produce
+permanent `TargetDown` alerts.
+
+### What is scraped
+
+| Source | How |
+| --- | --- |
+| Nodes, kubelet, cAdvisor, kube-state-metrics, CoreDNS | chart defaults |
+| Kafka brokers | JMX exporter (`lore-sentry-kafka-metrics` ConfigMap, Strimzi's reference rules), `PodMonitor` `lore-sentry-kafka` |
+| Consumer lag, topic offsets | Strimzi `kafkaExporter`, same `PodMonitor` |
+| Strimzi operator, Argo CD | `additionalPodMonitors` / `additionalServiceMonitors` in the chart values |
+| Loki, Alloy | their charts' `ServiceMonitor` |
+
+Kafka alerts live in `workload/base/kafka/prometheusrule.yaml`: partitions under
+min ISR or offline, controller count, broker scrape failure, broker volume above 85%,
+consumer lag, and any message written to a `*.dlq` topic.
+
+Grafana loads Strimzi's dashboards for Kafka, KRaft, Kafka Exporter and the
+operators from the `1.2.0` tag at pod start, into a `Kafka` folder.
+
+### Logs
+
+Alloy labels each stream with `namespace`, `pod`, `container`, `app` and `node`, and
+promotes `level` when the line is JSON. Anything with high cardinality — user,
+project or request IDs — stays in the line, not in a label.
+
+Loki reaches S3 through EKS Pod Identity (`monitoring/loki` →
+`lore-sentry-loki-role`); there is no access key. The bucket, role and association
+are created by `bootstrap/aws/setup-loki-storage.sh`, which is idempotent. The bucket
+lifecycle expires objects after 45 days as a backstop behind the compactor's 30.
+
+### Not in Git
+
+- The `grafana-admin` Secret (`admin-user`, `admin-password`) in `monitoring`.
+  Grafana does not start without it.
+
+  ```bash
+  kubectl -n monitoring create secret generic grafana-admin \
+    --from-literal=admin-user=admin \
+    --from-literal=admin-password="$(openssl rand -base64 24)"
+  ```
+
+- The Cloudflare record `grafana CNAME <ALB DNS name>`, proxy off.
+- Alertmanager has no receiver yet, so alerts are visible in Grafana and
+  Alertmanager only.
 
 ## Messaging — Kafka
 

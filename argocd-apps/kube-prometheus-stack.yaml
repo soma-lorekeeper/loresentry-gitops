@@ -1,0 +1,209 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+spec:
+  project: default
+
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: "91.8.2"
+    helm:
+      valuesObject:
+        fullnameOverride: kps
+
+        defaultRules:
+          rules:
+            etcd: false
+            kubeControllerManager: false
+            kubeProxy: false
+            kubeSchedulerAlerting: false
+            kubeSchedulerRecording: false
+            windows: false
+
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeEtcd:
+          enabled: false
+        kubeProxy:
+          enabled: false
+
+        alertmanager:
+          alertmanagerSpec:
+            resources:
+              requests:
+                cpu: 10m
+                memory: 64Mi
+              limits:
+                memory: 128Mi
+
+        prometheusOperator:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+
+        kube-state-metrics:
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+
+        prometheus-node-exporter:
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+
+        prometheus:
+          prometheusSpec:
+            retention: 15d
+            retentionSize: 18GB
+            scrapeInterval: 30s
+            evaluationInterval: 30s
+            ruleSelectorNilUsesHelmValues: false
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+            probeSelectorNilUsesHelmValues: false
+            scrapeConfigSelectorNilUsesHelmValues: false
+            resources:
+              requests:
+                cpu: 200m
+                memory: 1Gi
+              limits:
+                memory: 2Gi
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: gp3
+                  accessModes:
+                    - ReadWriteOnce
+                  resources:
+                    requests:
+                      storage: 20Gi
+
+          additionalServiceMonitors:
+            - name: argocd
+              namespaceSelector:
+                matchNames:
+                  - argocd
+              selector:
+                matchExpressions:
+                  - key: app.kubernetes.io/name
+                    operator: In
+                    values:
+                      - argocd-metrics
+                      - argocd-server-metrics
+                      - argocd-repo-server
+                      - argocd-applicationset-controller
+              endpoints:
+                - port: metrics
+
+          additionalPodMonitors:
+            - name: strimzi-cluster-operator
+              namespaceSelector:
+                matchNames:
+                  - strimzi-system
+              selector:
+                matchLabels:
+                  strimzi.io/kind: cluster-operator
+              podMetricsEndpoints:
+                - path: /metrics
+                  port: http
+
+        grafana:
+          fullnameOverride: grafana
+
+          admin:
+            existingSecret: grafana-admin
+            userKey: admin-user
+            passwordKey: admin-password
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+
+          defaultDashboardsTimezone: Asia/Seoul
+
+          grafana.ini:
+            server:
+              root_url: https://grafana.loresentry.com
+            analytics:
+              check_for_updates: false
+              reporting_enabled: false
+            users:
+              allow_sign_up: false
+            auth.anonymous:
+              enabled: false
+
+          ingress:
+            enabled: true
+            ingressClassName: alb
+            annotations:
+              alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+              alb.ingress.kubernetes.io/healthcheck-path: /api/health
+              alb.ingress.kubernetes.io/success-codes: "200-399"
+            hosts:
+              - grafana.loresentry.com
+            path: /
+            pathType: Prefix
+
+          additionalDataSources:
+            - name: Loki
+              uid: loki
+              type: loki
+              access: proxy
+              url: http://loki.monitoring.svc.cluster.local:3100
+              jsonData:
+                maxLines: 1000
+
+          dashboardProviders:
+            dashboardproviders.yaml:
+              apiVersion: 1
+              providers:
+                - name: kafka
+                  orgId: 1
+                  folder: Kafka
+                  type: file
+                  disableDeletion: true
+                  editable: false
+                  options:
+                    path: /var/lib/grafana/dashboards/kafka
+
+          dashboards:
+            kafka:
+              strimzi-kafka:
+                url: https://raw.githubusercontent.com/strimzi/strimzi-kafka-operator/1.2.0/packaging/examples/metrics/grafana-dashboards/strimzi-kafka.json
+              strimzi-kraft:
+                url: https://raw.githubusercontent.com/strimzi/strimzi-kafka-operator/1.2.0/packaging/examples/metrics/grafana-dashboards/strimzi-kraft.json
+              strimzi-kafka-exporter:
+                url: https://raw.githubusercontent.com/strimzi/strimzi-kafka-operator/1.2.0/packaging/examples/metrics/grafana-dashboards/strimzi-kafka-exporter.json
+              strimzi-operators:
+                url: https://raw.githubusercontent.com/strimzi/strimzi-kafka-operator/1.2.0/packaging/examples/metrics/grafana-dashboards/strimzi-operators.json
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
