@@ -63,6 +63,11 @@ spec:
                 configMapKeyRef:
                   name: media
                   key: public-base-url
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka
+                  key: bootstrap-servers
           ports:
             - name: http
               containerPort: 8000

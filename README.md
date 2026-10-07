@@ -359,7 +359,7 @@ use them rather than created by hand in a running cluster.
 | Nodes | `KafkaNodePool` `broker`, 3 replicas, **combined** `controller` + `broker` roles |
 | Storage | JBOD, one 10Gi `gp3` persistent-claim per broker, `deleteClaim: false` |
 | Listener | `plain` 9092, internal, no TLS |
-| Bootstrap | `lore-sentry-kafka-bootstrap:9092`, also in the `kafka` ConfigMap as `bootstrap-servers` |
+| Bootstrap | `lore-sentry-kafka-bootstrap:9092`, also in the `kafka` ConfigMap as `bootstrap-servers`. `content-api` reads it as `KAFKA_BOOTSTRAP_SERVERS`. |
 | Durability | `default.replication.factor: 3`, `min.insync.replicas: 2` |
 
 Combined roles keep the cluster at three pods. Splitting controllers into their own
