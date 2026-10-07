@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/part-of: lore-sentry
+data:
+  # Strimzi names the client Service <cluster>-kafka-bootstrap. The short name
+  # is enough because every client runs in the cluster's namespace, and base
+  # carries no namespace.
+  bootstrap-servers: lore-sentry-kafka-bootstrap:9092

@@ -5,6 +5,7 @@ resources:
   - kafka-node-pool.yaml
   - kafka.yaml
   - topics.yaml
+  - configmap.yaml
   - metrics-configmap.yaml
   - podmonitor.yaml
   - prometheusrule.yaml
