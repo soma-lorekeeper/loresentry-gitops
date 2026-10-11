@@ -359,7 +359,7 @@ use them rather than created by hand in a running cluster.
 | Nodes | `KafkaNodePool` `broker`, 3 replicas, **combined** `controller` + `broker` roles |
 | Storage | JBOD, one 10Gi `gp3` persistent-claim per broker, `deleteClaim: false` |
 | Listener | `plain` 9092, internal, no TLS |
-| Bootstrap | `lore-sentry-kafka-bootstrap:9092`, also in the `kafka` ConfigMap as `bootstrap-servers`. `content-api` reads it as `KAFKA_BOOTSTRAP_SERVERS`. |
+| Bootstrap | `lore-sentry-kafka-bootstrap:9092`, also in the `kafka` ConfigMap as `bootstrap-servers`. `content-api` and `authentication-api` read it as `KAFKA_BOOTSTRAP_SERVERS`. |
 | Durability | `default.replication.factor: 3`, `min.insync.replicas: 2` |
 
 Combined roles keep the cluster at three pods. Splitting controllers into their own
@@ -403,7 +403,7 @@ defines the event payloads and headers.
 | `content.project.changed.v1` | `project_id` | 6 | 3 days or 512 MiB per partition | `FileChanged`, `ProjectDeleted`. `content` publishes; `graph-rag` and `search` consume. |
 | `content.graph-refresh.requested.v1` | `project_id` | 3 | 7 days | `content` asks `graph-rag` to refresh a project's graph. The input is in S3. |
 | `graph-rag.graph-refresh.completed.v1` | `project_id` | 3 | 7 days | `graph-rag` reports the result back to `content`. |
-| `auth.user.deleted.v1` | `user_id` | 3 | 7 days | `auth` tells `content` an account is gone. No publisher yet: account deletion is synchronous HTTP through the gateway today. |
+| `auth.user.deleted.v1` | `user_id` | 3 | 7 days | `auth` tells `content` an account is gone. `auth` publishes it from its outbox when an account is deleted. The gateway still deletes the account's content over synchronous HTTP as well. |
 | `content.project.changed.v1.graph-rag.dlq` | | 3 | 7 days or 256 MiB per partition | |
 | `content.project.changed.v1.search.dlq` | | 3 | 7 days or 256 MiB per partition | Declared ahead of the `search` service. |
 | `content.graph-refresh.requested.v1.graph-rag.dlq` | | 3 | 30 days | |

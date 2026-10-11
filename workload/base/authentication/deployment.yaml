@@ -58,6 +58,13 @@ spec:
               value: auth-valkey
             - name: SPRING_DATA_REDIS_PORT
               value: "6379"
+            # outbox relay 가 UserDeleted 를 보낼 Kafka 주소. 값이 없어도 기동은 되지만 앱이
+            # localhost:9092 로 붙으려 해서, 탈퇴가 일어난 뒤부터 relay 가 발행에 계속 실패한다.
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka
+                  key: bootstrap-servers
           envFrom:
             # AUTH_GOOGLE_CLIENT_ID · CLIENT_SECRET · REDIRECT_URI,
             # AUTH_JWT_PRIVATE_KEY_BASE64 · KEY_ID,
