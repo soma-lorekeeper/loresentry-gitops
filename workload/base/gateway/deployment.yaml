@@ -17,6 +17,7 @@ spec:
         app.kubernetes.io/name: gateway-api
         app.kubernetes.io/part-of: lore-sentry
     spec:
+      terminationGracePeriodSeconds: 180
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone
