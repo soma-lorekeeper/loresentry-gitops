@@ -5,6 +5,7 @@ resources:
   - kafka-node-pool.yaml
   - kafka.yaml
   - topics.yaml
+  - graph-rag-sandbox-topic.yaml
   - configmap.yaml
   - metrics-configmap.yaml
   - podmonitor.yaml
