@@ -17,6 +17,7 @@ spec:
         app.kubernetes.io/name: ai-chat-api
         app.kubernetes.io/part-of: lore-sentry
     spec:
+      terminationGracePeriodSeconds: 190
       containers:
         - name: api
           image: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/ai-chat/api:bootstrap
@@ -47,6 +48,19 @@ spec:
                 secretKeyRef:
                   name: ai-chat-db
                   key: password
+            - name: CONTENT_BASE_URL
+              value: http://content-api
+            - name: OPENAI_MODEL
+              value: gpt-6-luna
+            - name: OPENAI_REASONING_EFFORT
+              value: medium
+            - name: CHAT_CONTEXT_LIMIT
+              value: "1400000"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ai-chat-openai
+                  key: OPENAI_API_KEY
           ports:
             - name: http
               containerPort: 8000
@@ -65,7 +79,7 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 256Mi
+              memory: 384Mi
             limits:
-              cpu: 500m
-              memory: 512Mi
+              cpu: "1"
+              memory: 1Gi
