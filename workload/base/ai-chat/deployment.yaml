@@ -54,8 +54,6 @@ spec:
               value: gpt-6-luna
             - name: OPENAI_REASONING_EFFORT
               value: medium
-            - name: CHAT_CONTEXT_LIMIT
-              value: "1400000"
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
