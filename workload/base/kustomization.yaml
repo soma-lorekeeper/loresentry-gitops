@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   - gateway
   - ai-chat
+  - ai-chat-summarizer
   - authentication
   - content
   - graph-rag

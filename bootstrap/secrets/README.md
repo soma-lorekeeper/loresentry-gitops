@@ -135,6 +135,9 @@ kubectl -n prod create secret generic ai-chat-openai \
 키를 바꿀 때는 같은 이름으로 다시 만들고(`--dry-run=client -o yaml | kubectl apply -f -`) 파드를
 재시작한다.
 
+`workload/base/ai-chat-summarizer` 도 같은 Secret 을 읽는다(문서 요약). 요약 비용을 따로 보려면 요약 전용
+키로 Secret 을 하나 더 만들고 그 Deployment 의 `OPENAI_API_KEY` 참조만 바꾼다.
+
 ## 6. 확인
 
 ```bash
