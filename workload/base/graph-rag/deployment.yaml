@@ -76,7 +76,7 @@ spec:
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: graph-rag-openai
+                  name: ai-chat-openai
                   key: OPENAI_API_KEY
           ports:
             - name: http
