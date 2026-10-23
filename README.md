@@ -522,7 +522,7 @@ request, context, batch and result objects under the same `refresh/` prefix.
 | `workload/base/refresh/configmap.yaml` | Bucket name and region, read by both Deployments. |
 | `workload/base/graph-rag/serviceaccount.yaml` | `graph-rag-api`. An **EKS Pod Identity association** maps it to the IAM role `lore-sentry-graph-rag-role`. |
 | `graph-rag` Deployment | `GRAPH_REFRESH_*`, `AWS_REGION`, `CONTENT_BASE_URL`, the OpenAI model and token limits, and `KAFKA_REFRESH_REQUESTED_ENABLED=true`. The key comes from the `graph-rag-openai` Secret (see `bootstrap/secrets/README.md`). |
-| `content` Deployment | `GRAPH_REFRESH_BUCKET`, reusing the `content-api` Pod Identity; `lore-sentry-content-role` gains a separate `refresh/*` policy. |
+| `content` Deployment | `GRAPH_REFRESH_REQUEST_BUCKET` and `GRAPH_REFRESH_COMPLETED_BUCKET` (the same bucket), reusing the `content-api` Pod Identity; `lore-sentry-content-role` gains a separate `refresh/*` policy. |
 
 Like the media bucket, the AWS side is created from a workstation, not by CI, in
 this order:
