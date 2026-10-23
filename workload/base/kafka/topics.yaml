@@ -177,8 +177,8 @@ metadata:
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   # UserDeleted, keyed by user_id. authentication-api publishes it from its
-  # outbox when an account is deleted. The gateway still deletes the account's
-  # content over synchronous HTTP as well.
+  # outbox when an account is deleted, and content-api deletes that account's
+  # content when it consumes it.
   partitions: 3
   replicas: 3
   config:

@@ -403,7 +403,7 @@ defines the event payloads and headers.
 | `content.project.changed.v1` | `project_id` | 6 | 3 days or 512 MiB per partition | `FileChanged`, `ProjectDeleted`. `content` publishes; `graph-rag` and `search` consume. |
 | `content.graph-refresh.requested.v1` | `project_id` | 3 | 7 days | `content` asks `graph-rag` to refresh a project's graph. The input is in S3. |
 | `graph-rag.graph-refresh.completed.v1` | `project_id` | 3 | 7 days | `graph-rag` reports the result back to `content`. |
-| `auth.user.deleted.v1` | `user_id` | 3 | 7 days | `auth` tells `content` an account is gone. `auth` publishes it from its outbox when an account is deleted. The gateway still deletes the account's content over synchronous HTTP as well. |
+| `auth.user.deleted.v1` | `user_id` | 3 | 7 days | `auth` tells `content` an account is gone. `auth` publishes it from its outbox when an account is deleted, and `content` deletes that account's content when it consumes it. |
 | `content.project.changed.v1.graph-rag.dlq` | | 3 | 7 days or 256 MiB per partition | |
 | `content.project.changed.v1.search.dlq` | | 3 | 7 days or 256 MiB per partition | Declared ahead of the `search` service. |
 | `content.graph-refresh.requested.v1.graph-rag.dlq` | | 3 | 30 days | |
