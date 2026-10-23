@@ -123,8 +123,7 @@ kubectl -n prod rollout restart deploy/auth-valkey
 
 ## 5. AI 챗 OpenAI 키
 
-`workload/base/ai-chat` 이 `OPENAI_API_KEY` 를 읽는 Secret 이다. 챗 전용 OpenAI 프로젝트 키를 쓴다
-(graph-rag 와 나누지 않는다 — 비용을 따로 보기 위해서다). **Deployment 보다 먼저 만든다.** 없으면
+`workload/base/ai-chat` 이 `OPENAI_API_KEY` 를 읽는 Secret 이다. **Deployment 보다 먼저 만든다.** 없으면
 새 파드가 `CreateContainerConfigError` 로 멈추고 기존 파드가 계속 돈다.
 
 ```bash
@@ -137,6 +136,10 @@ kubectl -n prod create secret generic ai-chat-openai \
 
 `workload/base/ai-chat-summarizer` 도 같은 Secret 을 읽는다(문서 요약). 요약 비용을 따로 보려면 요약 전용
 키로 Secret 을 하나 더 만들고 그 Deployment 의 `OPENAI_API_KEY` 참조만 바꾼다.
+
+`workload/base/graph-rag` 도 같은 Secret 을 읽는다(그래프 최신화의 갱신안 생성·입력 토큰 계수). 최신화 비용을
+따로 보려면 같은 방법으로 graph-rag 전용 Secret 을 만든다. OpenAI rate limit(TPM·RPM)은 키가 아니라 조직·프로젝트
+단위로 집계되므로, 키를 나눠도 조직 한도는 챗과 함께 쓴다.
 
 ## 6. 확인
 

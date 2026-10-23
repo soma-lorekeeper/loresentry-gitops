@@ -17,6 +17,7 @@ spec:
         app.kubernetes.io/name: graph-rag-api
         app.kubernetes.io/part-of: lore-sentry
     spec:
+      serviceAccountName: graph-rag-api
       terminationGracePeriodSeconds: 420
       containers:
         - name: api
@@ -28,7 +29,7 @@ spec:
             - name: KAFKA_PROJECT_CHANGED_ENABLED
               value: "true"
             - name: KAFKA_REFRESH_REQUESTED_ENABLED
-              value: "false"
+              value: "true"
             - name: KAFKA_BOOTSTRAP_SERVERS
               valueFrom:
                 configMapKeyRef:
@@ -49,6 +50,34 @@ spec:
                 configMapKeyRef:
                   name: neptune
                   key: port
+            - name: GRAPH_REFRESH_COMPLETED_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: refresh
+                  key: bucket
+            - name: GRAPH_REFRESH_REQUEST_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: refresh
+                  key: bucket
+            - name: GRAPH_REFRESH_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: refresh
+                  key: region
+            - name: CONTENT_BASE_URL
+              value: http://content-api
+            - name: OPENAI_MODEL
+              value: gpt-6-luna
+            - name: OPENAI_MAX_INPUT_TOKENS
+              value: "922000"
+            - name: OPENAI_CONTEXT_WINDOW
+              value: "1050000"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ai-chat-openai
+                  key: OPENAI_API_KEY
           ports:
             - name: http
               containerPort: 8000

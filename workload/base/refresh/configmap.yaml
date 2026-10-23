@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: refresh
+  labels:
+    app.kubernetes.io/name: refresh
+    app.kubernetes.io/part-of: lore-sentry
+data:
+  bucket: loresentry-refresh-prod-197179613039
+  region: ap-northeast-2

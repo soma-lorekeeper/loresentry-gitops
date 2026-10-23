@@ -88,12 +88,13 @@ git push
     │   ├── ai-chat/                   # each: kustomization, deployment, service
     │   ├── authentication/
     │   ├── content/                   # + serviceaccount (Pod Identity)
-    │   ├── graph-rag/
+    │   ├── graph-rag/                 # + serviceaccount (Pod Identity)
     │   ├── auth-valkey/               # + configmap
     │   ├── kafka/                     # Kafka, KafkaNodePool, KafkaTopic, configmap: bootstrap address
     │   ├── postgres/                  # configmap: RDS host, logical DB names
     │   ├── neptune/                   # configmap: Neptune endpoints
-    │   └── media/                     # configmap: S3 bucket, CloudFront host
+    │   ├── media/                     # configmap: S3 bucket, CloudFront host
+    │   └── refresh/                   # configmap: graph refresh S3 bucket
     │
     └── overlays/
         ├── prod/                      # the only environment deployed today
@@ -509,6 +510,32 @@ The AWS side — bucket, CORS, lifecycle, IAM, Pod Identity association, CloudFr
 distribution and bucket policy — is created by `docs/aws/setup-media.sh` in
 `loresentry-content`, and documented in `docs/IMAGE_UPLOAD_S3.md`.
 
+## Graph refresh — S3
+
+A graph refresh hands its input over S3. `content-api` uploads the changed
+documents to the private bucket `loresentry-refresh-prod-<account>`, publishes
+`GraphRefreshRequested`, and `graph-rag-api` reads the input and writes its
+request, context, batch and result objects under the same `refresh/` prefix.
+
+| | |
+| --- | --- |
+| `workload/base/refresh/configmap.yaml` | Bucket name and region, read by both Deployments. |
+| `workload/base/graph-rag/serviceaccount.yaml` | `graph-rag-api`. An **EKS Pod Identity association** maps it to the IAM role `lore-sentry-graph-rag-role`. |
+| `graph-rag` Deployment | `GRAPH_REFRESH_*` (buckets and region), `CONTENT_BASE_URL`, the OpenAI model and token limits, and `KAFKA_REFRESH_REQUESTED_ENABLED=true`. The key comes from the `ai-chat-openai` Secret it shares with ai-chat (see `bootstrap/secrets/README.md`). |
+| `content` Deployment | `GRAPH_REFRESH_REQUEST_BUCKET` and `GRAPH_REFRESH_COMPLETED_BUCKET` (the same bucket) and `GRAPH_REFRESH_REGION`, reusing the `content-api` Pod Identity; `lore-sentry-content-role` gains a separate `refresh/*` policy. |
+
+Like the media bucket, the AWS side is created from a workstation, not by CI, in
+this order:
+
+1. `docs/aws/setup-refresh.sh` in `loresentry-content` — the bucket (public access
+   blocked, SSE-S3, `refresh/` objects expire after three days) and
+   `lore-sentry-content-refresh-policy` on the content role.
+2. `deploy/setup-refresh.sh` in `loresentry-graph-rag` —
+   `lore-sentry-graph-rag-refresh-policy`, `lore-sentry-graph-rag-role` and the
+   `prod/graph-rag-api` association.
+
+Content's completion listener stays off until content handles completions.
+
 ## Capacity
 
 The node group is **3 × `r7i.large`**, 1930m allocatable CPU each (5790m total),
@@ -559,10 +586,11 @@ cluster is not reproducible from this repository alone until that is addressed.
 from outside GitOps. Anything applied by hand is invisible to Argo CD and will not
 survive a cluster rebuild.
 
-**The Pod Identity association for `content-api` is not in Git.** It is an EKS
-API object (`aws eks create-pod-identity-association`), not a Kubernetes one, so
-like the RDS instance it can only be recorded here, not declared. Rebuilding the
-cluster means re-running `setup-media.sh` in `loresentry-content`.
+**The Pod Identity associations for `content-api` and `graph-rag-api` are not in
+Git.** They are EKS API objects (`aws eks create-pod-identity-association`), not
+Kubernetes ones, so like the RDS instance they can only be recorded here, not
+declared. Rebuilding the cluster means re-running `setup-media.sh` in
+`loresentry-content` and `deploy/setup-refresh.sh` in `loresentry-graph-rag`.
 
 **Kafka's listener has no TLS or authentication.** It is `type: internal`, so it is
 only reachable from inside the cluster, but any pod in any namespace can reach it.
