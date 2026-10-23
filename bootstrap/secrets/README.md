@@ -1,6 +1,6 @@
-# Auth·BFF·AI 챗 런타임 Secret 만들기
+# Auth·BFF·AI 챗·graph-rag 런타임 Secret 만들기
 
-`workload/base/{authentication,gateway,auth-valkey,ai-chat}` 가 참조하는 Secret·ConfigMap 다섯 개를 만든다.
+`workload/base/{authentication,gateway,auth-valkey,ai-chat,graph-rag}` 가 참조하는 Secret·ConfigMap 여섯 개를 만든다.
 **이 디렉터리에 비밀 값을 커밋하지 않는다.** 값은 별도 경로로 전달받은 `AUTH_BFF_SECRETS.md` 에 있다.
 
 Argo CD 가 이들을 추적하지 않으므로 `prune` 에도 지워지지 않는다. 기존 `auth-valkey`·`<service>-db`
@@ -138,10 +138,21 @@ kubectl -n prod create secret generic ai-chat-openai \
 `workload/base/ai-chat-summarizer` 도 같은 Secret 을 읽는다(문서 요약). 요약 비용을 따로 보려면 요약 전용
 키로 Secret 을 하나 더 만들고 그 Deployment 의 `OPENAI_API_KEY` 참조만 바꾼다.
 
-## 6. 확인
+## 6. graph-rag OpenAI 키
+
+`workload/base/graph-rag` 가 그래프 최신화(갱신안 생성·입력 토큰 계수)에 쓰는 Secret 이다. 챗과 비용을
+따로 보도록 graph-rag 전용 OpenAI 키를 쓴다. **Deployment 보다 먼저 만든다.** 없으면 새 파드가
+`CreateContainerConfigError` 로 멈추고 기존 파드가 계속 돈다.
 
 ```bash
-kubectl -n prod get secret authentication-runtime gateway-runtime authentication-valkey-acl ai-chat-openai
+kubectl -n prod create secret generic graph-rag-openai \
+  --from-literal=OPENAI_API_KEY=...
+```
+
+## 7. 확인
+
+```bash
+kubectl -n prod get secret authentication-runtime gateway-runtime authentication-valkey-acl ai-chat-openai graph-rag-openai
 kubectl -n prod get configmap authentication-jwt-public
 kubectl -n prod rollout status deploy/auth-valkey
 kubectl -n prod rollout status deploy/authentication-api

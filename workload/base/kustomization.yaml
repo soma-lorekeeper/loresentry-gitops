@@ -13,3 +13,4 @@ resources:
   - postgres
   - neptune
   - media
+  - refresh

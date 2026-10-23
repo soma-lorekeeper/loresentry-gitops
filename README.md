@@ -88,12 +88,13 @@ git push
     │   ├── ai-chat/                   # each: kustomization, deployment, service
     │   ├── authentication/
     │   ├── content/                   # + serviceaccount (Pod Identity)
-    │   ├── graph-rag/
+    │   ├── graph-rag/                 # + serviceaccount (Pod Identity)
     │   ├── auth-valkey/               # + configmap
     │   ├── kafka/                     # Kafka, KafkaNodePool, KafkaTopic, configmap: bootstrap address
     │   ├── postgres/                  # configmap: RDS host, logical DB names
     │   ├── neptune/                   # configmap: Neptune endpoints
-    │   └── media/                     # configmap: S3 bucket, CloudFront host
+    │   ├── media/                     # configmap: S3 bucket, CloudFront host
+    │   └── refresh/                   # configmap: graph refresh S3 bucket
     │
     └── overlays/
         ├── prod/                      # the only environment deployed today
@@ -508,6 +509,25 @@ release.
 The AWS side — bucket, CORS, lifecycle, IAM, Pod Identity association, CloudFront
 distribution and bucket policy — is created by `docs/aws/setup-media.sh` in
 `loresentry-content`, and documented in `docs/IMAGE_UPLOAD_S3.md`.
+
+## Graph refresh — S3
+
+A graph refresh hands its input over S3. `content-api` uploads the changed
+documents to the private bucket `loresentry-refresh-prod-<account>`, publishes
+`GraphRefreshRequested`, and `graph-rag-api` reads the input and writes its
+request, context, batch and result objects under the same `refresh/` prefix.
+
+| | |
+| --- | --- |
+| `workload/base/refresh/configmap.yaml` | Bucket name and region, read by both Deployments. |
+| `workload/base/graph-rag/serviceaccount.yaml` | `graph-rag-api`, mapped by an **EKS Pod Identity association** to the graph-rag refresh role. |
+| `graph-rag` Deployment | `GRAPHRAG_S3_*`, `AWS_REGION`, `CONTENT_BASE_URL`, the OpenAI model and token limits, and `KAFKA_REFRESH_REQUESTED_ENABLED=true`. The key comes from the `graph-rag-openai` Secret (see `bootstrap/secrets/README.md`). |
+| `content` Deployment | `GRAPHRAG_S3_BUCKET`, reusing the `content-api` Pod Identity, whose role gains `refresh/*` access. |
+
+The bucket, both roles' permissions and the `graph-rag-api` association are created
+by the **Refresh infrastructure** workflow in `loresentry-graph-rag`
+(`deploy/refresh-infrastructure.yaml`). Objects under `refresh/` expire after three
+days. Content's completion listener stays off until content handles completions.
 
 ## Capacity
 
