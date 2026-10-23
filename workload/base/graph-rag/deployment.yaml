@@ -60,7 +60,7 @@ spec:
                 configMapKeyRef:
                   name: refresh
                   key: bucket
-            - name: AWS_REGION
+            - name: GRAPH_REFRESH_REGION
               valueFrom:
                 configMapKeyRef:
                   name: refresh

@@ -73,6 +73,11 @@ spec:
                 configMapKeyRef:
                   name: refresh
                   key: bucket
+            - name: GRAPH_REFRESH_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: refresh
+                  key: region
             - name: KAFKA_BOOTSTRAP_SERVERS
               valueFrom:
                 configMapKeyRef:
