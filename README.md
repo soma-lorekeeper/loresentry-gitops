@@ -520,14 +520,21 @@ request, context, batch and result objects under the same `refresh/` prefix.
 | | |
 | --- | --- |
 | `workload/base/refresh/configmap.yaml` | Bucket name and region, read by both Deployments. |
-| `workload/base/graph-rag/serviceaccount.yaml` | `graph-rag-api`, mapped by an **EKS Pod Identity association** to the graph-rag refresh role. |
+| `workload/base/graph-rag/serviceaccount.yaml` | `graph-rag-api`. An **EKS Pod Identity association** maps it to the IAM role `lore-sentry-graph-rag-role`. |
 | `graph-rag` Deployment | `GRAPHRAG_S3_*`, `AWS_REGION`, `CONTENT_BASE_URL`, the OpenAI model and token limits, and `KAFKA_REFRESH_REQUESTED_ENABLED=true`. The key comes from the `graph-rag-openai` Secret (see `bootstrap/secrets/README.md`). |
-| `content` Deployment | `GRAPHRAG_S3_BUCKET`, reusing the `content-api` Pod Identity, whose role gains `refresh/*` access. |
+| `content` Deployment | `GRAPHRAG_S3_BUCKET`, reusing the `content-api` Pod Identity; `lore-sentry-content-role` gains a separate `refresh/*` policy. |
 
-The bucket, both roles' permissions and the `graph-rag-api` association are created
-by the **Refresh infrastructure** workflow in `loresentry-graph-rag`
-(`deploy/refresh-infrastructure.yaml`). Objects under `refresh/` expire after three
-days. Content's completion listener stays off until content handles completions.
+Like the media bucket, the AWS side is created from a workstation, not by CI, in
+this order:
+
+1. `docs/aws/setup-refresh.sh` in `loresentry-content` — the bucket (public access
+   blocked, SSE-S3, `refresh/` objects expire after three days) and
+   `lore-sentry-content-refresh-policy` on the content role.
+2. `deploy/setup-refresh.sh` in `loresentry-graph-rag` —
+   `lore-sentry-graph-rag-refresh-policy`, `lore-sentry-graph-rag-role` and the
+   `prod/graph-rag-api` association.
+
+Content's completion listener stays off until content handles completions.
 
 ## Capacity
 
@@ -579,10 +586,11 @@ cluster is not reproducible from this repository alone until that is addressed.
 from outside GitOps. Anything applied by hand is invisible to Argo CD and will not
 survive a cluster rebuild.
 
-**The Pod Identity association for `content-api` is not in Git.** It is an EKS
-API object (`aws eks create-pod-identity-association`), not a Kubernetes one, so
-like the RDS instance it can only be recorded here, not declared. Rebuilding the
-cluster means re-running `setup-media.sh` in `loresentry-content`.
+**The Pod Identity associations for `content-api` and `graph-rag-api` are not in
+Git.** They are EKS API objects (`aws eks create-pod-identity-association`), not
+Kubernetes ones, so like the RDS instance they can only be recorded here, not
+declared. Rebuilding the cluster means re-running `setup-media.sh` in
+`loresentry-content` and `deploy/setup-refresh.sh` in `loresentry-graph-rag`.
 
 **Kafka's listener has no TLS or authentication.** It is `type: internal`, so it is
 only reachable from inside the cluster, but any pod in any namespace can reach it.
