@@ -50,12 +50,12 @@ spec:
                 configMapKeyRef:
                   name: neptune
                   key: port
-            - name: GRAPHRAG_S3_BUCKET
+            - name: GRAPH_REFRESH_BUCKET
               valueFrom:
                 configMapKeyRef:
                   name: refresh
                   key: bucket
-            - name: GRAPHRAG_S3_INPUT_BUCKET
+            - name: GRAPH_REFRESH_INPUT_BUCKET
               valueFrom:
                 configMapKeyRef:
                   name: refresh

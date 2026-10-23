@@ -63,7 +63,7 @@ spec:
                 configMapKeyRef:
                   name: media
                   key: public-base-url
-            - name: GRAPHRAG_S3_BUCKET
+            - name: GRAPH_REFRESH_BUCKET
               valueFrom:
                 configMapKeyRef:
                   name: refresh
