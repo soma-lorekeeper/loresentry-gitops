@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: openai-mock
+  labels:
+    app.kubernetes.io/name: openai-mock
+    app.kubernetes.io/part-of: lore-sentry
+spec:
+  type: ClusterIP
+  selector:
+    app: openai-mock
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

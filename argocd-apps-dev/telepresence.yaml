@@ -1,0 +1,57 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: telepresence
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: ghcr.io/telepresenceio
+    chart: telepresence-oss
+    targetRevision: "2.31.2"
+    helm:
+      valuesObject:
+        namespaces:
+          - dev
+
+        client:
+          routing:
+            alsoProxySubnets:
+              - 10.20.13.0/24
+              - 10.20.14.0/24
+
+        clientRbac:
+          create: true
+          namespaces:
+            - dev
+          subjects:
+            - kind: Group
+              name: lore-viewers
+              apiGroup: rbac.authorization.k8s.io
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ambassador
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+
+  ignoreDifferences:
+    - kind: Secret
+      name: mutator-webhook-tls
+      namespace: ambassador
+      jqPathExpressions:
+        - .data
+
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      name: agent-injector-webhook-ambassador
+      jqPathExpressions:
+        - .webhooks[].clientConfig.caBundle

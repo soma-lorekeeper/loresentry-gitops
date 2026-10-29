@@ -1,0 +1,16 @@
+{
+  "Rules": [
+    {
+      "ID": "expire-refresh-artifacts",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "refresh/" },
+      "Expiration": { "Days": 3 }
+    },
+    {
+      "ID": "abort-incomplete-multipart",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "" },
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 1 }
+    }
+  ]
+}
