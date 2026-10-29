@@ -57,7 +57,12 @@ git push
 ```
 .
 ├── bootstrap/
-│   └── root-application.yaml          # applied once, by hand
+│   ├── root-application.yaml          # applied once, by hand
+│   └── dev/                           # scripts that build and tear down the dev cluster
+│
+├── argocd-apps-dev/                   # the dev cluster's Applications (read only by its own root)
+├── platform-dev/                      # dev's StorageClass and argocd-dev Ingress
+├── loadtest/                          # session seeding and k6 scenarios for dev
 │
 ├── argocd-apps/                       # one Application per component
 │   ├── aws-load-balancer-controller.yaml
@@ -97,12 +102,11 @@ git push
     │   └── refresh/                   # configmap: graph refresh S3 bucket
     │
     └── overlays/
-        ├── prod/                      # the only environment deployed today
+        ├── prod/                      # lore-sentry-k8s
         │   ├── kustomization.yaml     # namespace, image tags, replica counts
         │   ├── namespace.yaml
         │   └── ingress.yaml           # the single public entry point
-        └── dev/                       # placeholder; no Application points here
-            └── .gitkeep
+        └── dev/                       # lore-sentry-dev-k8s: dev endpoints, api-dev host, openai-mock
 ```
 
 ## How it fits together
@@ -597,14 +601,33 @@ only reachable from inside the cluster, but any pod in any namespace can reach i
 That is acceptable while the cluster has a single tenant and no NetworkPolicy, and is
 worth revisiting before it does not.
 
-## Adding the dev environment
+## Dev cluster
 
-Write `workload/overlays/dev/` and add `argocd-apps/workload-dev.yaml` pointing at
-it. Until that Application exists, nothing under `overlays/dev/` reaches the
-cluster — which is why the directory can be filled in ahead of time.
+`dev` is a separate EKS cluster, `lore-sentry-dev-k8s`, built the same way as prod
+for load and availability testing. It runs its own Argo CD, whose root Application
+(`bootstrap/dev/root-application.yaml`) reads `argocd-apps-dev/`.
 
-Each overlay keeps its own `images:` entries, so `dev` and `prod` run independent
-image tags from the same base and the same ECR repository.
+**Never put a dev Application in `argocd-apps/`.** Prod's root reads that directory
+and every Application there targets `https://kubernetes.default.svc`, so it would
+be deployed into the prod cluster.
+
+The dev Applications are copies of prod's with only these values changed: cluster
+name and ALB group, hostnames (`*-dev.loresentry.com`), the Loki bucket, the
+Strimzi and Telepresence namespace, and Telepresence's subnets. When a prod
+Application changes, change its copy too:
+
+```bash
+for f in argocd-apps-dev/*.yaml; do
+  p=argocd-apps/$(basename "$f"); [ -f "$p" ] || p=argocd-apps/workload-prod.yaml
+  diff "$p" "$f"
+done
+```
+
+`workload/overlays/dev` uses the same base. CI does not deploy to it; align its image
+tags with prod before a test with `bootstrap/dev/sync-images.sh`. Building,
+operating and deleting the cluster are described in
+[`bootstrap/dev/README.md`](bootstrap/dev/README.md), and load testing in
+[`loadtest/README.md`](loadtest/README.md).
 
 ## Bootstrap
 
