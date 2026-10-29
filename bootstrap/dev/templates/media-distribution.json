@@ -1,0 +1,36 @@
+{
+  "CallerReference": "__CALLER_REFERENCE__",
+  "Comment": "Lore Sentry dev user media (__MEDIA_HOST__)",
+  "Enabled": true,
+  "HttpVersion": "http2and3",
+  "IsIPV6Enabled": true,
+  "PriceClass": "PriceClass_All",
+  "Aliases": { "Quantity": 1, "Items": ["__MEDIA_HOST__"] },
+  "Origins": {
+    "Quantity": 1,
+    "Items": [
+      {
+        "Id": "s3-media",
+        "DomainName": "__BUCKET__.s3.__REGION__.amazonaws.com",
+        "OriginAccessControlId": "__OAC_ID__",
+        "S3OriginConfig": { "OriginAccessIdentity": "" }
+      }
+    ]
+  },
+  "DefaultCacheBehavior": {
+    "TargetOriginId": "s3-media",
+    "ViewerProtocolPolicy": "redirect-to-https",
+    "AllowedMethods": {
+      "Quantity": 2,
+      "Items": ["GET", "HEAD"],
+      "CachedMethods": { "Quantity": 2, "Items": ["GET", "HEAD"] }
+    },
+    "Compress": true,
+    "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6"
+  },
+  "ViewerCertificate": {
+    "ACMCertificateArn": "__CERT_ARN__",
+    "SSLSupportMethod": "sni-only",
+    "MinimumProtocolVersion": "TLSv1.2_2021"
+  }
+}

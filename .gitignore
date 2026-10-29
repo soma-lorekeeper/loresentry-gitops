@@ -1,3 +1,6 @@
 .DS_Store
 *.swp
 *.tmp
+
+loadtest/.sessions*.csv
+__pycache__/

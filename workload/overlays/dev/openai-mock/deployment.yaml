@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openai-mock
+  labels:
+    app.kubernetes.io/name: openai-mock
+    app.kubernetes.io/part-of: lore-sentry
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openai-mock
+  template:
+    metadata:
+      labels:
+        app: openai-mock
+        app.kubernetes.io/name: openai-mock
+        app.kubernetes.io/part-of: lore-sentry
+    spec:
+      containers:
+        - name: mock
+          image: python:3.13-alpine
+          imagePullPolicy: IfNotPresent
+          command: ["python", "/app/server.py"]
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: MOCK_TOOL_DELAY_MS
+              value: "1500-4000"
+            - name: MOCK_TEXT_DELAY_MS
+              value: "3000-8000"
+            - name: MOCK_JUDGE_DELAY_MS
+              value: "800-2000"
+            - name: MOCK_ANSWER_CHARS
+              value: "1200"
+          ports:
+            - name: http
+              containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: app
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: app
+          configMap:
+            name: openai-mock

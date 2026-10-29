@@ -1,0 +1,84 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: dev
+
+resources:
+  - namespace.yaml
+  - rbac.yaml
+  - ../../base
+  - ingress.yaml
+  - openai-mock
+
+images:
+  - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/gateway/api
+    newTag: build-28-1
+  - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/ai-chat/api
+    newTag: build-18-1
+  - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/authentication/api
+    newTag: build-15-1
+  - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/content/api
+    newTag: build-29-1
+  - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/graph-rag/api
+    newTag: build-21-1
+
+replicas:
+  - name: gateway-api
+    count: 2
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: postgres
+    patch: |-
+      - op: replace
+        path: /data/host
+        value: lore-sentry-dev-postgres.c1guoowwmnj7.ap-northeast-2.rds.amazonaws.com
+  - target:
+      kind: ConfigMap
+      name: neptune
+    patch: |-
+      - op: replace
+        path: /data/endpoint
+        value: lore-sentry-dev-neptune.cluster-c1guoowwmnj7.ap-northeast-2.neptune.amazonaws.com
+      - op: replace
+        path: /data/reader-endpoint
+        value: lore-sentry-dev-neptune.cluster-ro-c1guoowwmnj7.ap-northeast-2.neptune.amazonaws.com
+  - target:
+      kind: ConfigMap
+      name: media
+    patch: |-
+      - op: replace
+        path: /data/bucket
+        value: loresentry-media-dev-197179613039
+      - op: replace
+        path: /data/public-base-url
+        value: https://media-dev.loresentry.com
+  - target:
+      kind: ConfigMap
+      name: refresh
+    patch: |-
+      - op: replace
+        path: /data/bucket
+        value: loresentry-refresh-dev-197179613039
+  - target:
+      kind: PrometheusRule
+      name: lore-sentry-kafka
+    patch: |-
+      - op: replace
+        path: /spec/groups/0/rules/4/expr
+        value: up{namespace="dev", kubernetes_pod_name=~"lore-sentry-broker-[0-9]+"} == 0
+      - op: replace
+        path: /spec/groups/0/rules/5/expr
+        value: |
+          kubelet_volume_stats_available_bytes{namespace="dev", persistentvolumeclaim=~"data-[0-9]+-lore-sentry-broker-[0-9]+"}
+            / kubelet_volume_stats_capacity_bytes{namespace="dev", persistentvolumeclaim=~"data-[0-9]+-lore-sentry-broker-[0-9]+"} < 0.15
+  - target:
+      kind: Deployment
+      name: (ai-chat-api|ai-chat-summarizer|graph-rag-api)
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: OPENAI_BASE_URL
+          value: http://openai-mock/v1
