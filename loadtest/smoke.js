@@ -33,6 +33,7 @@ export const options = {
     http_req_failed: ["rate<0.01"],
     "http_req_duration{kind:read}": ["p(95)<800"],
   },
+  hosts: __ENV.TARGET_IP ? { [BASE_URL.replace(/^https?:\/\//, "").split("/")[0]]: __ENV.TARGET_IP } : {},
 };
 
 export function setup() {
@@ -42,13 +43,14 @@ export function setup() {
 }
 
 function params(session, kind, mutate = false) {
-  const headers = { Cookie: `__Host-ls_session=${session}` };
+  const headers = {};
   if (mutate) {
     headers.Origin = ORIGIN;
     headers["X-LS-CSRF"] = "1";
     headers["Content-Type"] = "application/json";
   }
-  return { headers, tags: { kind } };
+  const cookies = { "__Host-ls_session": { value: session, replace: true } };
+  return { headers, cookies, tags: { kind } };
 }
 
 let projectId = null;
