@@ -82,3 +82,19 @@ patches:
         value:
           name: OPENAI_BASE_URL
           value: http://openai-mock/v1
+  - target:
+      kind: Deployment
+      name: (gateway-api|authentication-api)
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: profile
+      spec:
+        template:
+          spec:
+            containers:
+              - name: api
+                env:
+                  - name: SPRING_PROFILES_ACTIVE
+                    value: dev

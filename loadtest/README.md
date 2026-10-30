@@ -26,7 +26,7 @@ loadtest/seed-sessions.sh 200        # 사용자 200명. 결과는 loadtest/.ses
 | | |
 |---|---|
 | 세션 | 쿠키 `__Host-ls_session=<session_id>` |
-| 상태 변경 요청 | `Origin: https://loresentry.com`, `X-LS-CSRF: 1` |
+| 상태 변경 요청 | `Origin: https://dev.loresentry.com`, `X-LS-CSRF: 1` (dev 는 `dev` 프로필이라 dev 프런트 Origin 만 받는다) |
 | AI 챗 | `POST /chat/sessions/{sid}/messages`, `intent`는 `ask`·`explain`·`related`·`flow`. 답은 SSE |
 | 한도 | AI 챗은 사용자당 하루 사용량 한도와 동시 답 1개 제한이 있다. 동시성을 올리려면 사용자를 늘린다 |
 

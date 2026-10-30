@@ -70,9 +70,9 @@ ACL
     --from-literal=BFF_SESSION_REDIS_PASSWORD="$BFF_REDIS_PW" \
     --dry-run=client -o yaml | kc apply -f - >/dev/null
   kc -n "$NAMESPACE" create secret generic authentication-runtime \
-    --from-literal=AUTH_GOOGLE_CLIENT_ID=dev-google-oauth-disabled \
-    --from-literal=AUTH_GOOGLE_CLIENT_SECRET=dev-google-oauth-disabled \
-    --from-literal=AUTH_GOOGLE_REDIRECT_URI=https://api.loresentry.com/auth/oauth/google/callback \
+    --from-literal=AUTH_GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-dev-google-oauth-disabled}" \
+    --from-literal=AUTH_GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-dev-google-oauth-disabled}" \
+    --from-literal=AUTH_GOOGLE_REDIRECT_URI="$GOOGLE_REDIRECT_URI" \
     --from-literal=AUTH_JWT_PRIVATE_KEY_BASE64="$PRIVATE_B64" \
     --from-literal=AUTH_JWT_KEY_ID="$KEY_ID" \
     --from-literal=SPRING_DATA_REDIS_USERNAME=authentication \

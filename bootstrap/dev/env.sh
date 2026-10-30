@@ -118,3 +118,11 @@ cluster_sg_id() {
 kc() {
   kubectl --context "$KUBE_CONTEXT" "$@"
 }
+
+WEB_HOST=dev.loresentry.com
+WEB_BUCKET="loresentry-web-dev-${ACCOUNT}"
+WEB_FUNCTION=loresentry-web-dev-rewrite
+PROD_WEB_HOST=loresentry.com
+PROD_WEB_FUNCTION=loresentry-web-rewrite
+WEB_DEPLOY_POLICY=loresentry-frontend-cdn-deploy
+GOOGLE_REDIRECT_URI="https://${API_HOST}/auth/oauth/google/callback"
