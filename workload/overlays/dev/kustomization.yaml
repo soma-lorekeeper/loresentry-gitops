@@ -101,7 +101,7 @@ patches:
                     value: dev
   - target:
       kind: Deployment
-      name: (content-api|graph-rag-api|ai-chat-summarizer)
+      name: (content-api|graph-rag-api|ai-chat-api|ai-chat-summarizer)
     patch: |-
       - op: add
         path: /spec/template/spec/containers/0/env/-
@@ -126,6 +126,13 @@ patches:
       - op: add
         path: /spec/template/spec/serviceAccountName
         value: ai-chat-summarizer
+  - target:
+      kind: Deployment
+      name: ai-chat-api
+    patch: |-
+      - op: add
+        path: /spec/template/spec/serviceAccountName
+        value: ai-chat-api
   - target:
       kind: Deployment
       name: content-api

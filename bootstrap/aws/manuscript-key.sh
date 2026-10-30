@@ -30,13 +30,15 @@ if ! aws iam get-role --role-name "$AI_CHAT_ROLE" >/dev/null 2>&1; then
   echo "role ${AI_CHAT_ROLE}"
 fi
 
-existing=$(aws eks list-pod-identity-associations --cluster-name "$CLUSTER" --namespace "$NAMESPACE" \
-  --service-account ai-chat-summarizer --query 'associations[0].associationId' --output text)
-if [ "$existing" = "None" ]; then
-  aws eks create-pod-identity-association --cluster-name "$CLUSTER" --namespace "$NAMESPACE" \
-    --service-account ai-chat-summarizer --role-arn "arn:aws:iam::${ACCOUNT}:role/${AI_CHAT_ROLE}" >/dev/null
-  echo "pod identity ${NAMESPACE}/ai-chat-summarizer"
-fi
+for account in ai-chat-api ai-chat-summarizer; do
+  existing=$(aws eks list-pod-identity-associations --cluster-name "$CLUSTER" --namespace "$NAMESPACE" \
+    --service-account "$account" --query 'associations[0].associationId' --output text)
+  if [ "$existing" = "None" ]; then
+    aws eks create-pod-identity-association --cluster-name "$CLUSTER" --namespace "$NAMESPACE" \
+      --service-account "$account" --role-arn "arn:aws:iam::${ACCOUNT}:role/${AI_CHAT_ROLE}" >/dev/null
+    echo "pod identity ${NAMESPACE}/${account}"
+  fi
+done
 
 sed -e "s/__ACCOUNT__/${ACCOUNT}/g" -e "s/__PREFIX__/${PREFIX}/g" \
   "${HERE}/manuscript-key-policy.json" > "${WORK}/policy.json"
