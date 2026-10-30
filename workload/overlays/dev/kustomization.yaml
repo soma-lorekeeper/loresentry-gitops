@@ -12,7 +12,7 @@ resources:
 
 images:
   - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/gateway/api
-    newTag: build-29-1
+    newTag: build-30-1
   - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/ai-chat/api
     newTag: build-19-1
   - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/authentication/api
