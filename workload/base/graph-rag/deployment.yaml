@@ -78,6 +78,16 @@ spec:
                 secretKeyRef:
                   name: ai-chat-openai
                   key: OPENAI_API_KEY
+            - name: MANUSCRIPT_KEY_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: manuscript-key
+                  key: key-id
+            - name: MANUSCRIPT_KEY_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: manuscript-key
+                  key: region
           ports:
             - name: http
               containerPort: 8000

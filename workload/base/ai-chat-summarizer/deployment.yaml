@@ -17,6 +17,7 @@ spec:
         app.kubernetes.io/name: ai-chat-summarizer
         app.kubernetes.io/part-of: lore-sentry
     spec:
+      serviceAccountName: ai-chat-summarizer
       terminationGracePeriodSeconds: 60
       containers:
         - name: summarizer
@@ -63,6 +64,16 @@ spec:
                 secretKeyRef:
                   name: ai-chat-openai
                   key: OPENAI_API_KEY
+            - name: MANUSCRIPT_KEY_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: manuscript-key
+                  key: key-id
+            - name: MANUSCRIPT_KEY_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: manuscript-key
+                  key: region
           livenessProbe:
             exec:
               command:
