@@ -627,7 +627,10 @@ done
 branch; its CI runs the same workflow as `main` but invokes
 `loresentry-update-gitops-dev`, which rewrites `newTag` in
 `workload/overlays/dev/kustomization.yaml` instead of the prod overlay. To put dev
-back on prod's versions, run `bootstrap/dev/sync-images.sh` and open a PR. Building,
+back on prod's versions, run `bootstrap/dev/sync-images.sh` and open a PR. The
+frontend works the same way: its `dev` branch deploys to `dev.loresentry.com`, and
+the dev overlay runs gateway and authentication with the `dev` Spring profile,
+which accepts only the dev hostnames. Building,
 operating and deleting the cluster are described in
 [`bootstrap/dev/README.md`](bootstrap/dev/README.md), and load testing in
 [`loadtest/README.md`](loadtest/README.md).

@@ -3,7 +3,7 @@ import { check, sleep, fail } from "k6";
 import { SharedArray } from "k6/data";
 
 const BASE_URL = __ENV.BASE_URL || "https://api-dev.loresentry.com";
-const ORIGIN = "https://loresentry.com";
+const ORIGIN = __ENV.ORIGIN || "https://dev.loresentry.com";
 
 if (/^https:\/\/api\.loresentry\.com/.test(BASE_URL)) {
   throw new Error("refusing to load-test the production API");

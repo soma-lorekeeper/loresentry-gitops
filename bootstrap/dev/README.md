@@ -26,7 +26,7 @@ EIP 쿼터(5개 중 4개 사용)를 늘리지 않으려고 NAT를 새로 만들�
 | ACM 인증서(ALB·CloudFront), ECR 이미지, CloudFront OAC | EKS 클러스터·노드 그룹·Pod Identity 연결, ALB(`group.name: lore-sentry-dev`) |
 | IAM 역할: 클러스터·노드·vpc-cni·ebs-csi·LBC | IAM 역할: `lore-sentry-dev-{content,graph-rag,loki}-role` — dev 버킷에만 접근 |
 | | RDS `lore-sentry-dev-postgres`, Neptune `lore-sentry-dev-neptune`, 각 SG(소스는 dev 클러스터 SG만) |
-| | S3 `loresentry-{media,refresh,logs}-dev-<account>`, CloudFront `media-dev.loresentry.com` |
+| | S3 `loresentry-{media,refresh,logs,web}-dev-<account>`, CloudFront `media-dev.loresentry.com`·`dev.loresentry.com` |
 
 격리는 보안 그룹이 맡는다. prod DB SG는 prod 클러스터 SG만, dev DB SG는 dev 클러스터 SG만 허용하고, 두 클러스터
 SG는 서로를 허용하지 않는다. 그래서 같은 VPC에 있어도 dev 파드가 prod DB·Kafka·파드에 닿지 않는다.
@@ -38,13 +38,14 @@ ALB로 들어오므로 NAT를 타지 않지만, 부하 발생기를 이 VPC의 p
 
 | | 왜 |
 |---|---|
-| 호스트 `api-dev`·`argocd-dev`·`grafana-dev`·`media-dev` `.loresentry.com` | 와일드카드 인증서 `*.loresentry.com`이 한 단계만 덮으므로 `api.dev.` 가 아니라 `api-dev.` |
+| 호스트 `dev`·`api-dev`·`argocd-dev`·`grafana-dev`·`media-dev` `.loresentry.com` | 와일드카드 인증서 `*.loresentry.com`이 한 단계만 덮으므로 `api.dev.` 가 아니라 `api-dev.` |
 | ConfigMap `postgres`·`neptune`·`media`·`refresh`의 주소와 버킷 | dev 리소스를 가리킨다 (`workload/overlays/dev/kustomization.yaml`) |
 | **OpenAI mock** — ai-chat·summarizer·graph-rag에 `OPENAI_BASE_URL=http://openai-mock/v1` | 부하 테스트가 돈을 쓰지 않고, prod와 같은 조직의 OpenAI rate limit을 나눠 쓰지 않게 |
-| Google 로그인 불가 (`AUTH_GOOGLE_CLIENT_*`가 더미) | 콜백 주소가 코드에 prod로 고정돼 있다. 부하 테스트 사용자는 `loadtest/seed-sessions.sh`로 만든다 |
+| gateway·auth 는 `dev` 프로필 | gateway 는 프런트 `https://dev.loresentry.com`·API `https://api-dev.loresentry.com` 만, auth 는 Google 콜백 `https://api-dev.loresentry.com/auth/oauth/google/callback` 만 받는다. 쿠키 이름(`__Host-`)과 보안 설정은 prod 와 같다 |
+| Google 로그인은 dev 용 OAuth 클라이언트가 필요 | Google 콘솔에서 만든 값을 `set-google-oauth.sh`로 넣는다. 그 전에는 더미 값이라 로그인만 실패한다. 부하 테스트 사용자는 `loadtest/seed-sessions.sh`로 만든다 |
+| 프런트의 GA 측정 ID 비움, `robots.txt` 수집 금지 | dev 방문이 운영 GA·Google Ads 전환에 섞이지 않고, 검색엔진에 dev 가 잡히지 않게 |
 | Argo CD SSO 없음 | GitHub OAuth 앱이 따로 필요하다. 로컬 admin으로 로그인한다 |
 | 노드 SSH 없음 | prod의 22번(`0.0.0.0/0`) 개방은 복제하지 않는다 |
-| 앱은 prod 프로필 그대로 | gateway·auth가 prod 프로필에서 prod 도메인만 허용하므로 그대로 둔다. gateway는 Host를 검사하지 않아 `api-dev`로도 동작한다. CSRF·CORS는 Origin `https://loresentry.com` 기준이다 |
 
 ## 만드는 순서
 
@@ -59,6 +60,8 @@ cd bootstrap/dev
 ./04-storage-iam.sh      # dev 버킷·IAM·Pod Identity·media CloudFront
 ./05-cluster-bootstrap.sh  # Argo CD·Git 밖 Secret·논리 DB·root Application
 ./06-post-sync.sh        # LBC 웹훅 CA 정렬·실패한 앱 재동기화·Cloudflare 레코드 출력
+./07-frontend.sh         # dev 프런트 버킷·CloudFront(prod 설정 복사)·rewrite 함수·CI 배포 권한
+./set-google-oauth.sh    # Google 콘솔에서 만든 dev OAuth 클라이언트 값을 넣고 auth 재시작
 ```
 
 `03`과 `04`는 `02`와 동시에 돌려도 된다. 클러스터가 아직 없으면 SG 규칙과 Pod Identity만 건너뛰고 안내를 남기니,
@@ -73,7 +76,8 @@ cd bootstrap/dev
 api-dev.loresentry.com     CNAME  <dev ALB DNS>
 argocd-dev.loresentry.com  CNAME  <dev ALB DNS>
 grafana-dev.loresentry.com CNAME  <dev ALB DNS>
-media-dev.loresentry.com   CNAME  <dev CloudFront 도메인>
+media-dev.loresentry.com   CNAME  <dev 미디어 CloudFront 도메인>
+dev.loresentry.com         CNAME  <dev 프런트 CloudFront 도메인>   (07-frontend.sh 가 출력)
 ```
 
 ## 접속
@@ -103,7 +107,7 @@ DB 마스터 비밀번호는 `aws rds describe-db-instances --db-instance-identi
 | 이름 | 내용 |
 |---|---|
 | `authentication-db` `content-db` `ai-chat-db` | 서비스 역할 계정. 같은 비밀번호로 RDS 역할을 만든다 |
-| `authentication-runtime` `gateway-runtime` | 새 RSA 키 쌍·`kid`, valkey 계정 비밀번호, Google 더미 값 |
+| `authentication-runtime` `gateway-runtime` | 새 RSA 키 쌍·`kid`, valkey 계정 비밀번호, Google OAuth(dev 클라이언트 또는 더미)·dev 콜백 주소 |
 | `authentication-valkey-acl` / ConfigMap `authentication-jwt-public` | prod와 같은 ACL 명령 목록, dev 비밀번호의 해시 |
 | `ai-chat-openai` | `OPENAI_API_KEY`. 기본은 mock용 더미 |
 | `monitoring/grafana-admin` | Grafana admin |
@@ -152,8 +156,10 @@ dev 를 prod 와 같은 버전으로 되돌리려면 태그를 복사해 PR 로 
 bootstrap/dev/sync-images.sh    # workload/overlays/dev 의 images: 를 prod 와 같게
 ```
 
-프론트엔드에는 dev 배포가 없다. gateway 가 prod 프로필에서 프런트 Origin 을 `https://loresentry.com` 하나로 고정하므로
-dev 도메인의 프런트는 CORS·CSRF 를 통과하지 못한다.
+프런트엔드(`loresentry-frontend`)도 같은 방식이다. `dev` 브랜치 push 가 같은 빌드를 dev 버킷에 올리고 dev
+CloudFront(`dev.loresentry.com`)를 무효화한다. dev 빌드만 `config.json`의 `apiBaseUrl`을 `https://api-dev.loresentry.com`
+으로, `gaMeasurementId`를 빈 값으로 바꾸고 `robots.txt`로 수집을 막는다. dev CloudFront 는 prod 배포 설정을 그대로
+복사했고(캐시·헤더·오류 페이지 정책 공유), rewrite 함수만 `loresentry-web-dev-rewrite`로 따로 둔다.
 
 ## 부하·가용성 테스트
 
@@ -180,7 +186,7 @@ CONFIRM=lore-sentry-dev-k8s bootstrap/dev/teardown.sh
 ```
 
 ALB를 먼저 놓아 준 뒤 클러스터, `Retain`으로 남는 EBS 볼륨, DB, CloudFront, 버킷, dev IAM, dev 서브넷 순으로
-지운다. 공유 리소스는 건드리지 않는다. 끝나면 Cloudflare 레코드 네 개를 지운다.
+지운다. 공유 리소스는 건드리지 않는다. 끝나면 Cloudflare 레코드 다섯 개를 지운다.
 
 ## 처음 만들 때 겪은 것
 

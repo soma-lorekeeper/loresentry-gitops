@@ -78,25 +78,36 @@ for sg in "$POSTGRES_SG" "$NEPTUNE_SG"; do
   [ "$id" != "None" ] && aws ec2 delete-security-group --group-id "$id" && echo "deleted ${sg}"
 done
 
-echo "== 5. CloudFront ${MEDIA_HOST}"
-DIST_ID="$(aws cloudfront list-distributions \
-  --query "DistributionList.Items[?contains(Aliases.Items || \`[]\`, '${MEDIA_HOST}')].Id | [0]" --output text)"
-if [ "$DIST_ID" != "None" ] && [ -n "$DIST_ID" ]; then
-  aws cloudfront get-distribution-config --id "$DIST_ID" > "${TMPDIR:-/tmp}/dist.json"
-  ETAG="$(jq -r .ETag "${TMPDIR:-/tmp}/dist.json")"
+echo "== 5. CloudFront ${MEDIA_HOST}, ${WEB_HOST}"
+delete_distribution() {
+  local host=$1 id etag
+  id="$(aws cloudfront list-distributions \
+    --query "DistributionList.Items[?contains(Aliases.Items || \`[]\`, '${host}')].Id | [0]" --output text)"
+  [ "$id" = "None" ] || [ -z "$id" ] && return
+  aws cloudfront get-distribution-config --id "$id" > "${TMPDIR:-/tmp}/dist.json"
+  etag="$(jq -r .ETag "${TMPDIR:-/tmp}/dist.json")"
   if [ "$(jq -r .DistributionConfig.Enabled "${TMPDIR:-/tmp}/dist.json")" = "true" ]; then
     jq '.DistributionConfig.Enabled = false | .DistributionConfig' "${TMPDIR:-/tmp}/dist.json" > "${TMPDIR:-/tmp}/dist-off.json"
-    ETAG="$(aws cloudfront update-distribution --id "$DIST_ID" --if-match "$ETAG" \
+    etag="$(aws cloudfront update-distribution --id "$id" --if-match "$etag" \
       --distribution-config "file://${TMPDIR:-/tmp}/dist-off.json" --query ETag --output text)"
   fi
-  aws cloudfront wait distribution-deployed --id "$DIST_ID"
-  aws cloudfront delete-distribution --id "$DIST_ID" --if-match "$ETAG"
+  aws cloudfront wait distribution-deployed --id "$id"
+  aws cloudfront delete-distribution --id "$id" --if-match "$etag"
   rm -f "${TMPDIR:-/tmp}/dist.json" "${TMPDIR:-/tmp}/dist-off.json"
-  echo "deleted ${DIST_ID}"
+  echo "deleted ${id} (${host})"
+}
+WEB_DIST_ID="$(aws cloudfront list-distributions \
+  --query "DistributionList.Items[?contains(Aliases.Items || \`[]\`, '${WEB_HOST}')].Id | [0]" --output text)"
+delete_distribution "$MEDIA_HOST"
+delete_distribution "$WEB_HOST"
+if aws cloudfront describe-function --name "$WEB_FUNCTION" >/dev/null 2>&1; then
+  aws cloudfront delete-function --name "$WEB_FUNCTION" \
+    --if-match "$(aws cloudfront describe-function --name "$WEB_FUNCTION" --query ETag --output text)"
+  echo "deleted ${WEB_FUNCTION}"
 fi
 
 echo "== 6. buckets"
-for bucket in "$MEDIA_BUCKET" "$REFRESH_BUCKET" "$LOGS_BUCKET"; do
+for bucket in "$MEDIA_BUCKET" "$REFRESH_BUCKET" "$LOGS_BUCKET" "$WEB_BUCKET"; do
   if aws s3api head-bucket --bucket "$bucket" 2>/dev/null; then
     aws s3 rm "s3://${bucket}" --recursive --only-show-errors
     aws s3api delete-bucket --bucket "$bucket"
@@ -120,6 +131,20 @@ for policy in "$CONTENT_MEDIA_POLICY" "$CONTENT_REFRESH_POLICY" "$GRAPH_RAG_REFR
   done
   aws iam delete-policy --policy-arn "$arn" && echo "deleted ${policy}"
 done
+POLICY_ARN="arn:aws:iam::${ACCOUNT}:policy/${WEB_DEPLOY_POLICY}"
+VERSION="$(aws iam get-policy --policy-arn "$POLICY_ARN" --query Policy.DefaultVersionId --output text)"
+aws iam get-policy-version --policy-arn "$POLICY_ARN" --version-id "$VERSION" \
+  --query PolicyVersion.Document --output json \
+  | jq --arg bucket "$WEB_BUCKET" --arg dist "${WEB_DIST_ID:-none}" \
+      '.Statement |= map(.Resource |= (if type == "array" then map(select((contains($bucket) or contains("distribution/" + $dist)) | not)) else . end))' \
+  > "${TMPDIR:-/tmp}/web-deploy.json"
+for v in $(aws iam list-policy-versions --policy-arn "$POLICY_ARN" --query 'Versions[?IsDefaultVersion==`false`].VersionId' --output text); do
+  aws iam delete-policy-version --policy-arn "$POLICY_ARN" --version-id "$v"
+done
+aws iam create-policy-version --policy-arn "$POLICY_ARN" \
+  --policy-document "file://${TMPDIR:-/tmp}/web-deploy.json" --set-as-default >/dev/null
+rm -f "${TMPDIR:-/tmp}/web-deploy.json"
+echo "removed dev resources from ${WEB_DEPLOY_POLICY}"
 
 echo "== 8. dev subnets and route table"
 RTB_ID="$(aws ec2 describe-route-tables --filters Name=vpc-id,Values="$VPC_ID" Name=tag:Name,Values="$PRIVATE_ROUTE_TABLE" \
@@ -142,4 +167,4 @@ done
 
 echo
 echo "done. shared prod resources (VPC, NAT, IGW, public subnets, ACM, ECR, OAC, base IAM roles) were not touched."
-echo "remove the Cloudflare records api-dev, argocd-dev, grafana-dev, media-dev."
+echo "remove the Cloudflare records api-dev, argocd-dev, grafana-dev, media-dev, dev."
