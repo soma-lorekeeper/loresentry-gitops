@@ -141,3 +141,21 @@ patches:
         path: /spec/strategy
         value:
           type: Recreate
+  - patch: |-
+      $patch: delete
+      apiVersion: kafka.strimzi.io/v1
+      kind: KafkaTopic
+      metadata:
+        name: content.project.changed.v1
+  - patch: |-
+      $patch: delete
+      apiVersion: kafka.strimzi.io/v1
+      kind: KafkaTopic
+      metadata:
+        name: content.project.changed.v1.graph-rag.dlq
+  - patch: |-
+      $patch: delete
+      apiVersion: kafka.strimzi.io/v1
+      kind: KafkaTopic
+      metadata:
+        name: content.project.changed.v1.search.dlq
