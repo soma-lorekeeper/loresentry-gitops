@@ -9,6 +9,7 @@ resources:
   - ../../base
   - ingress.yaml
   - openai-mock
+  - manuscript-encryption.yaml
 
 images:
   - name: 197179613039.dkr.ecr.ap-northeast-2.amazonaws.com/gateway/api
@@ -98,3 +99,38 @@ patches:
                 env:
                   - name: SPRING_PROFILES_ACTIVE
                     value: dev
+  - target:
+      kind: Deployment
+      name: (content-api|graph-rag-api|ai-chat-summarizer)
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: MANUSCRIPT_KEY_ID
+          valueFrom:
+            configMapKeyRef:
+              name: manuscript-key
+              key: key-id
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: MANUSCRIPT_KEY_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: manuscript-key
+              key: region
+  - target:
+      kind: Deployment
+      name: ai-chat-summarizer
+    patch: |-
+      - op: add
+        path: /spec/template/spec/serviceAccountName
+        value: ai-chat-summarizer
+  - target:
+      kind: Deployment
+      name: content-api
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value:
+          type: Recreate
