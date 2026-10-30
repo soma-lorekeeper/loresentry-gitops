@@ -1,0 +1,43 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ContentCreatesAndOpens",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::__ACCOUNT__:role/__PREFIX__-content-role" },
+      "Action": ["kms:GenerateDataKey", "kms:Decrypt"],
+      "Resource": "*",
+      "Condition": { "StringLike": { "kms:EncryptionContext:project_id": "*" } }
+    },
+    {
+      "Sid": "ConsumersOpenOnly",
+      "Effect": "Allow",
+      "Principal": { "AWS": [
+        "arn:aws:iam::__ACCOUNT__:role/__PREFIX__-graph-rag-role",
+        "arn:aws:iam::__ACCOUNT__:role/__PREFIX__-ai-chat-role"
+      ] },
+      "Action": "kms:Decrypt",
+      "Resource": "*",
+      "Condition": { "StringLike": { "kms:EncryptionContext:project_id": "*" } }
+    },
+    {
+      "Sid": "SandboxAdminsManageButCannotUse",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::__ACCOUNT__:root" },
+      "Action": [
+        "kms:Describe*", "kms:Get*", "kms:List*",
+        "kms:PutKeyPolicy", "kms:UpdateKeyDescription",
+        "kms:EnableKeyRotation", "kms:DisableKeyRotation", "kms:RotateKeyOnDemand",
+        "kms:EnableKey", "kms:DisableKey",
+        "kms:CreateAlias", "kms:UpdateAlias", "kms:DeleteAlias",
+        "kms:TagResource", "kms:UntagResource",
+        "kms:ScheduleKeyDeletion", "kms:CancelKeyDeletion"
+      ],
+      "Resource": "*",
+      "Condition": { "ArnLike": { "aws:PrincipalArn": [
+        "arn:aws:iam::__ACCOUNT__:role/aws-reserved/sso.amazonaws.com/*/AWSReservedSSO_myisb_IsbUsersPS_*",
+        "arn:aws:iam::__ACCOUNT__:role/aws-reserved/sso.amazonaws.com/*/AWSReservedSSO_myisb_IsbAdminsPS_*"
+      ] } }
+    }
+  ]
+}
