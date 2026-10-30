@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: manuscript-key
+  labels:
+    app.kubernetes.io/part-of: lore-sentry
+data:
+  key-id: alias/lore-sentry-manuscript
+  region: ap-northeast-2

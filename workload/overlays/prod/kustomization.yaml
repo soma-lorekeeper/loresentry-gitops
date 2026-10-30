@@ -24,3 +24,13 @@ images:
 replicas:
   - name: gateway-api
     count: 2
+
+patches:
+  - target:
+      kind: Deployment
+      name: content-api
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value:
+          type: Recreate

@@ -83,6 +83,16 @@ spec:
                 configMapKeyRef:
                   name: kafka
                   key: bootstrap-servers
+            - name: MANUSCRIPT_KEY_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: manuscript-key
+                  key: key-id
+            - name: MANUSCRIPT_KEY_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: manuscript-key
+                  key: region
           ports:
             - name: http
               containerPort: 8000
