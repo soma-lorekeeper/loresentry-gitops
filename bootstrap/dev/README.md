@@ -126,13 +126,34 @@ kubectl --context lore-sentry-dev -n dev create secret generic ai-chat-openai \
   --from-literal=OPENAI_API_KEY=sk-... --dry-run=client -o yaml | kubectl --context lore-sentry-dev apply -f -
 ```
 
-## 이미지 태그
+## 배포 — 앱 저장소의 `dev` 브랜치
 
-dev는 자동 배포되지 않는다. Lambda는 prod overlay만 고친다. 테스트 전에 prod 태그로 맞추고 PR로 올린다.
+백엔드 5개 저장소(gateway·authentication·content·ai-chat·graph-rag)에 `dev` 브랜치가 있고, 같은 workflow
+(`ci-cd.yaml`)가 브랜치에 따라 배포 대상을 고른다.
+
+| 브랜치 | Lambda | 고치는 파일 | 클러스터 |
+|---|---|---|---|
+| `main` | `loresentry-update-gitops` | `workload/overlays/prod/kustomization.yaml` | `lore-sentry-k8s` |
+| `dev` | `loresentry-update-gitops-dev` | `workload/overlays/dev/kustomization.yaml` | `lore-sentry-dev-k8s` |
+
+```text
+dev 브랜치 push → 테스트·이미지 빌드 → ECR build-<run>-<attempt>
+  → loresentry-update-gitops-dev → 이 저장소 main 의 dev overlay newTag 커밋 → dev Argo CD
+```
+
+- 두 브랜치가 한 workflow 의 실행 번호를 나눠 쓰므로 태그가 겹치지 않는다(ECR 은 immutable).
+- concurrency group 이 브랜치별이라 dev push 가 진행 중인 prod 배포를 취소하지 않는다.
+- Lambda 코드는 하나다(`loresentry-lambda`). `deploy.sh` 가 두 함수에 같이 올린다.
+- 커밋 메시지는 prod·dev 모두 `deploy(<service>/api): update image to <tag>`다. 어느 환경인지는 바뀐 파일로 본다.
+
+dev 를 prod 와 같은 버전으로 되돌리려면 태그를 복사해 PR 로 올린다.
 
 ```bash
 bootstrap/dev/sync-images.sh    # workload/overlays/dev 의 images: 를 prod 와 같게
 ```
+
+프론트엔드에는 dev 배포가 없다. gateway 가 prod 프로필에서 프런트 Origin 을 `https://loresentry.com` 하나로 고정하므로
+dev 도메인의 프런트는 CORS·CSRF 를 통과하지 못한다.
 
 ## 부하·가용성 테스트
 

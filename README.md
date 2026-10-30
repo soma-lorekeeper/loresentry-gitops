@@ -623,8 +623,11 @@ for f in argocd-apps-dev/*.yaml; do
 done
 ```
 
-`workload/overlays/dev` uses the same base. CI does not deploy to it; align its image
-tags with prod before a test with `bootstrap/dev/sync-images.sh`. Building,
+`workload/overlays/dev` uses the same base. Each backend repository has a `dev`
+branch; its CI runs the same workflow as `main` but invokes
+`loresentry-update-gitops-dev`, which rewrites `newTag` in
+`workload/overlays/dev/kustomization.yaml` instead of the prod overlay. To put dev
+back on prod's versions, run `bootstrap/dev/sync-images.sh` and open a PR. Building,
 operating and deleting the cluster are described in
 [`bootstrap/dev/README.md`](bootstrap/dev/README.md), and load testing in
 [`loadtest/README.md`](loadtest/README.md).
