@@ -106,6 +106,25 @@ if ! aws neptune describe-db-instances --db-instance-identifier "$NEPTUNE_INSTAN
   echo "instance requested"
 fi
 
+echo "== 5. backup and maintenance windows copied from prod"
+if [ "$(aws rds describe-db-instances --db-instance-identifier "$POSTGRES_ID" --query 'DBInstances[0].DBInstanceStatus' --output text)" = "available" ]; then
+  read -r PB PM <<<"$(aws rds describe-db-instances --db-instance-identifier lore-sentry-postgres \
+    --query 'DBInstances[0].[PreferredBackupWindow,PreferredMaintenanceWindow]' --output text)"
+  aws rds modify-db-instance --db-instance-identifier "$POSTGRES_ID" --apply-immediately \
+    --preferred-backup-window "$PB" --preferred-maintenance-window "$PM" >/dev/null
+  read -r NB NM <<<"$(aws neptune describe-db-clusters --db-cluster-identifier lore-sentry-neptune \
+    --query 'DBClusters[0].[PreferredBackupWindow,PreferredMaintenanceWindow]' --output text)"
+  aws neptune modify-db-cluster --db-cluster-identifier "$NEPTUNE_ID" --apply-immediately \
+    --preferred-backup-window "$NB" --preferred-maintenance-window "$NM" >/dev/null
+  NI="$(aws neptune describe-db-instances --db-instance-identifier lore-sentry-neptune-1 \
+    --query 'DBInstances[0].PreferredMaintenanceWindow' --output text)"
+  aws neptune modify-db-instance --db-instance-identifier "$NEPTUNE_INSTANCE" --apply-immediately \
+    --preferred-maintenance-window "$NI" >/dev/null
+  echo "postgres ${PB} / ${PM}, neptune ${NB} / ${NM}, ${NEPTUNE_INSTANCE} ${NI}"
+else
+  echo "databases are still being created; rerun this script to copy prod's windows"
+fi
+
 if [ "${WAIT:-0}" = "1" ]; then
   aws rds wait db-instance-available --db-instance-identifier "$POSTGRES_ID"
   aws neptune wait db-instance-available --db-instance-identifier "$NEPTUNE_INSTANCE"
