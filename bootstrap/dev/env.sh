@@ -79,18 +79,15 @@ LOGICAL_DATABASES="authentication:authentication_svc content:content_svc ai_chat
 
 MEDIA_BUCKET="loresentry-media-dev-${ACCOUNT}"
 REFRESH_BUCKET="loresentry-refresh-dev-${ACCOUNT}"
-LOGS_BUCKET="loresentry-logs-dev-${ACCOUNT}"
 MEDIA_HOST=media-dev.loresentry.com
 MEDIA_OAC_NAME=loresentry-media-oac
 CERT_DOMAIN=loresentry.com
 
 CONTENT_ROLE=lore-sentry-dev-content-role
 GRAPH_RAG_ROLE=lore-sentry-dev-graph-rag-role
-LOKI_ROLE=lore-sentry-dev-loki-role
 CONTENT_MEDIA_POLICY=lore-sentry-dev-content-media-policy
 CONTENT_REFRESH_POLICY=lore-sentry-dev-content-refresh-policy
 GRAPH_RAG_REFRESH_POLICY=lore-sentry-dev-graph-rag-refresh-policy
-LOKI_POLICY=lore-sentry-dev-loki-storage-policy
 
 # 로깅 스택(ELK). 매니페스트는 logging/, 로그 규약은 docs 저장소 LOG_SCHEMA.md
 LOGGING_NAMESPACE=monitoring

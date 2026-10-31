@@ -13,7 +13,7 @@
 | 애드온 | vpc-cni·coredns·kube-proxy·ebs-csi·pod-identity-agent·metrics-server·node-monitoring-agent, 버전 고정 |
 | RDS | PG 18.6 `db.t4g.micro`, gp3 20GB, Single-AZ **2b**, 기본 파라미터 그룹, 마스터 비밀번호는 Secrets Manager, 논리 DB 3개·서비스 역할·`CONNECT` 차단 |
 | Neptune | 1.4.8.0 `db.t4g.medium` writer 1대 **2b**, 기본 파라미터 그룹 |
-| 클러스터 안 | Argo CD v3.5.2, LBC 3.5.0, Strimzi 1.2.0 / Kafka 4.3.1(브로커 3대, 토픽 10개), kube-prometheus-stack, Loki, Alloy, Telepresence — 차트 버전과 values가 prod와 같다 |
+| 클러스터 안 | Argo CD v3.5.2, LBC 3.5.0, Strimzi 1.2.0 / Kafka 4.3.1(브로커 3대, 토픽 10개), kube-prometheus-stack, Telepresence — 차트 버전과 values가 prod와 같다. 로그 수집은 ELK(`logging/`) |
 | 워크로드 | `workload/base` 그대로. 이미지 태그·replica·리소스 request/limit 모두 prod와 같다 |
 
 ## prod와 공유하는 것 / dev만 가진 것
@@ -24,15 +24,15 @@ EIP 쿼터(5개 중 4개 사용)를 늘리지 않으려고 NAT를 새로 만들�
 |---|---|
 | VPC `lore-sentry-vpc`, IGW, regional NAT, public 서브넷 | private 서브넷 `10.20.13.0/24`(2a)·`10.20.14.0/24`(2b), 라우팅 테이블 `lore-sentry-dev-private` |
 | ACM 인증서(ALB·CloudFront), ECR 이미지, CloudFront OAC | EKS 클러스터·노드 그룹(공용 pool, 로깅 전용 pool)·Pod Identity 연결, ALB(`group.name: lore-sentry-dev`) |
-| IAM 역할: 클러스터·노드·vpc-cni·ebs-csi·LBC | IAM 역할: `lore-sentry-dev-{content,graph-rag,loki,logstash,filebeat-aws}-role` — dev 버킷·로그 그룹에만 접근 |
+| IAM 역할: 클러스터·노드·vpc-cni·ebs-csi·LBC | IAM 역할: `lore-sentry-dev-{content,graph-rag,logstash,filebeat-aws}-role` — dev 버킷·로그 그룹에만 접근 |
 | | RDS `lore-sentry-dev-postgres`, Neptune `lore-sentry-dev-neptune`, 각 SG(소스는 dev 클러스터 SG만), 로그용 파라미터 그룹 |
-| | S3 `loresentry-{media,refresh,logs,web,log-archive,aws-logs}-dev-<account>`, CloudFront `media-dev.loresentry.com`·`dev.loresentry.com` |
+| | S3 `loresentry-{media,refresh,web,log-archive,aws-logs}-dev-<account>`, CloudFront `media-dev.loresentry.com`·`dev.loresentry.com` |
 | | CloudWatch 로그 그룹(RDS·Neptune·EKS, 보존 30일) |
 
 격리는 보안 그룹이 맡는다. prod DB SG는 prod 클러스터 SG만, dev DB SG는 dev 클러스터 SG만 허용하고, 두 클러스터
 SG는 서로를 허용하지 않는다. 그래서 같은 VPC에 있어도 dev 파드가 prod DB·Kafka·파드에 닿지 않는다.
 
-**NAT는 공유다.** dev 파드의 외부 트래픽(ECR pull, S3, Loki)은 prod와 같은 NAT를 지난다. 부하 테스트 트래픽은
+**NAT는 공유다.** dev 파드의 외부 트래픽(ECR pull, S3, CloudWatch Logs 조회)은 prod와 같은 NAT를 지난다. 부하 테스트 트래픽은
 ALB로 들어오므로 NAT를 타지 않지만, 부하 발생기를 이 VPC의 private 서브넷에 두면 NAT를 탄다 — 두지 않는다.
 
 ## prod와 의도적으로 다른 것

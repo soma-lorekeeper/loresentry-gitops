@@ -128,7 +128,7 @@ if aws cloudfront describe-function --name "$WEB_FUNCTION" >/dev/null 2>&1; then
 fi
 
 echo "== 6. buckets"
-for bucket in "$MEDIA_BUCKET" "$REFRESH_BUCKET" "$LOGS_BUCKET" "$WEB_BUCKET" "$ARCHIVE_BUCKET" "$AWS_LOGS_BUCKET"; do
+for bucket in "$MEDIA_BUCKET" "$REFRESH_BUCKET" "$WEB_BUCKET" "$ARCHIVE_BUCKET" "$AWS_LOGS_BUCKET"; do
   if aws s3api head-bucket --bucket "$bucket" 2>/dev/null; then
     aws s3 rm "s3://${bucket}" --recursive --only-show-errors
     aws s3api delete-bucket --bucket "$bucket"
@@ -137,14 +137,14 @@ for bucket in "$MEDIA_BUCKET" "$REFRESH_BUCKET" "$LOGS_BUCKET" "$WEB_BUCKET" "$A
 done
 
 echo "== 7. IAM"
-for role in "$CONTENT_ROLE" "$GRAPH_RAG_ROLE" "$LOKI_ROLE" "$LOGSTASH_ROLE" "$FILEBEAT_AWS_ROLE"; do
+for role in "$CONTENT_ROLE" "$GRAPH_RAG_ROLE" "$LOGSTASH_ROLE" "$FILEBEAT_AWS_ROLE"; do
   aws iam get-role --role-name "$role" >/dev/null 2>&1 || continue
   for arn in $(aws iam list-attached-role-policies --role-name "$role" --query 'AttachedPolicies[].PolicyArn' --output text); do
     aws iam detach-role-policy --role-name "$role" --policy-arn "$arn"
   done
   aws iam delete-role --role-name "$role" && echo "deleted ${role}"
 done
-for policy in "$CONTENT_MEDIA_POLICY" "$CONTENT_REFRESH_POLICY" "$GRAPH_RAG_REFRESH_POLICY" "$LOKI_POLICY" \
+for policy in "$CONTENT_MEDIA_POLICY" "$CONTENT_REFRESH_POLICY" "$GRAPH_RAG_REFRESH_POLICY" \
     "$LOGSTASH_POLICY" "$FILEBEAT_AWS_POLICY"; do
   arn="arn:aws:iam::${ACCOUNT}:policy/${policy}"
   aws iam get-policy --policy-arn "$arn" >/dev/null 2>&1 || continue

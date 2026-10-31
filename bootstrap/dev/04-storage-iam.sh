@@ -80,7 +80,6 @@ ensure_bucket "$MEDIA_BUCKET" media "${TEMPLATES}/media-bucket-lifecycle.json"
 aws s3api put-bucket-cors --bucket "$MEDIA_BUCKET" \
   --cors-configuration "file://${TEMPLATES}/media-bucket-cors.json"
 ensure_bucket "$REFRESH_BUCKET" graph-refresh "${TEMPLATES}/refresh-bucket-lifecycle.json"
-ensure_bucket "$LOGS_BUCKET" loki "${BOOTSTRAP_AWS_DIR}/loki-bucket-lifecycle.json"
 # 로깅 스택: Logstash가 쓰는 가공본 보관(1년)과, ALB·CloudFront가 쓰는 원천 로그(30일)를 나눈다.
 ensure_bucket "$ARCHIVE_BUCKET" log-archive "${BOOTSTRAP_AWS_DIR}/log-archive-bucket-lifecycle.json"
 ensure_bucket "$AWS_LOGS_BUCKET" aws-logs "${BOOTSTRAP_AWS_DIR}/aws-logs-bucket-lifecycle.json"
@@ -94,10 +93,8 @@ echo "== 2. IAM"
 MEDIA_POLICY_ARN="$(ensure_policy "$CONTENT_MEDIA_POLICY" "${TEMPLATES}/iam-content-media-policy.json" "$MEDIA_BUCKET")"
 CONTENT_REFRESH_ARN="$(ensure_policy "$CONTENT_REFRESH_POLICY" "${TEMPLATES}/iam-content-refresh-policy.json" "$REFRESH_BUCKET")"
 GRAPH_RAG_REFRESH_ARN="$(ensure_policy "$GRAPH_RAG_REFRESH_POLICY" "${TEMPLATES}/iam-graph-rag-refresh-policy.json" "$REFRESH_BUCKET")"
-LOKI_POLICY_ARN="$(ensure_policy "$LOKI_POLICY" "${BOOTSTRAP_AWS_DIR}/iam-loki-storage-policy.json" "$LOGS_BUCKET")"
 ensure_role "$CONTENT_ROLE" "dev content-api pod: media and graph refresh buckets" "$MEDIA_POLICY_ARN" "$CONTENT_REFRESH_ARN"
 ensure_role "$GRAPH_RAG_ROLE" "dev graph-rag-api pod: graph refresh bucket" "$GRAPH_RAG_REFRESH_ARN"
-ensure_role "$LOKI_ROLE" "dev loki pod: log chunks and index" "$LOKI_POLICY_ARN"
 # 로깅 스택 역할은 최소 권한으로 둘로 나눈다. Logstash는 보관 버킷에 쓰기만(지우기 없음),
 # aws-logs Filebeat는 원천 버킷과 정해진 로그 그룹 읽기만 한다.
 # Logstash S3 출력은 업로드마다 ACL(bucket-owner-full-control)을 붙이므로 PutObjectAcl도 준다.
@@ -115,7 +112,6 @@ echo "== 3. pod identity associations"
 if [ "$(aws eks describe-cluster --name "$CLUSTER" --query cluster.status --output text 2>/dev/null)" = "ACTIVE" ]; then
   ensure_association "$NAMESPACE" content-api "$CONTENT_ROLE"
   ensure_association "$NAMESPACE" graph-rag-api "$GRAPH_RAG_ROLE"
-  ensure_association monitoring loki "$LOKI_ROLE"
   # ServiceAccount가 아직 없어도 연결은 만들 수 있다. ServiceAccount는 로깅 스택을 배포할 때 생긴다.
   ensure_association "$LOGGING_NAMESPACE" logstash "$LOGSTASH_ROLE"
   ensure_association "$LOGGING_NAMESPACE" filebeat-aws "$FILEBEAT_AWS_ROLE"
