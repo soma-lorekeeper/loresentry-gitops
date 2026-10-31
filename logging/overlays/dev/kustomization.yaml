@@ -39,3 +39,22 @@ patches:
         value:
           name: ARCHIVE_BUCKET
           value: loresentry-log-archive-dev-197179613039
+  # aws-logs Filebeat가 읽는 원천. 모두 bootstrap/dev/04-storage-iam.sh가 만든 것이다(env.sh와 같은 이름).
+  - target:
+      kind: Beat
+      name: filebeat-aws
+    patch: |-
+      - op: add
+        path: /spec/deployment/podTemplate/spec/containers/0/env
+        value:
+          - name: AWS_REGION
+            value: ap-northeast-2
+          # ALB·CloudFront가 쓰는 원천 버킷(30일)
+          - name: AWS_LOGS_BUCKET
+            value: loresentry-aws-logs-dev-197179613039
+          - name: RDS_LOG_GROUP
+            value: /aws/rds/instance/lore-sentry-dev-postgres/postgresql
+          - name: NEPTUNE_LOG_GROUP
+            value: /aws/neptune/lore-sentry-dev-neptune/slowquery
+          - name: EKS_LOG_GROUP
+            value: /aws/eks/lore-sentry-dev-k8s/cluster

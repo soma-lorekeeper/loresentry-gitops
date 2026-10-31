@@ -1,0 +1,107 @@
+# AWS 관리형 로그 수집. 노드 파일이 아니라 AWS API에서 가져오므로 클러스터에 1대만 둔다(여러 대면 같은 로그를 두 번 읽는다).
+#   - S3 원천 버킷(ALB 접근 로그, CloudFront v2 로그)을 주기적으로 훑어 새 객체를 읽는다
+#   - CloudWatch 로그 그룹(RDS PostgreSQL, Neptune slowquery, EKS audit·authenticator)을 1분마다 조회한다
+# 보내는 곳은 Logstash aws pipeline(logstash-ls-aws:5045). 파싱·마스킹은 Logstash가 한다.
+# 버킷·로그 그룹 이름은 환경마다 달라 overlay가 컨테이너 env(AWS_LOGS_BUCKET, *_LOG_GROUP)로 넣는다.
+# 로그를 켜는 것은 6단계다. 그 전에는 빈 원천을 조회만 하며 기다린다.
+apiVersion: beat.k8s.elastic.co/v1beta1
+kind: Beat
+metadata:
+  name: filebeat-aws
+  annotations:
+    # wave 2: Logstash와 같은 차례. Logstash가 늦게 뜨면 연결될 때까지 다시 시도하며 기다린다.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  type: filebeat
+  version: 9.5.5
+  config:
+    filebeat.inputs:
+      # ALB 접근 로그: alb/AWSLogs/<계정>/elasticloadbalancing/... 아래 gzip 파일. 줄 하나가 요청 하나다.
+      - type: aws-s3
+        id: aws-s3-alb
+        bucket_arn: arn:aws:s3:::${AWS_LOGS_BUCKET}
+        bucket_list_prefix: alb/
+        bucket_list_interval: 60s
+        number_of_workers: 2
+        # 처리한 객체 목록이 끝없이 커지지 않게 7일 안에 바뀐 객체만 본다(원천 버킷은 30일 보관).
+        ignore_older: 168h
+        fields:
+          aws_source: alb
+      # CloudFront v2 로그(JSON 형식): cloudfront/ 아래. 줄 하나가 JSON 하나다.
+      - type: aws-s3
+        id: aws-s3-cloudfront
+        bucket_arn: arn:aws:s3:::${AWS_LOGS_BUCKET}
+        bucket_list_prefix: cloudfront/
+        bucket_list_interval: 60s
+        number_of_workers: 2
+        ignore_older: 168h
+        fields:
+          aws_source: cloudfront
+      # CloudWatch 로그 그룹 3개. 늦게 도착하는 이벤트를 놓치지 않게 조회 구간을 5분 늦춘다(latency).
+      # lastSync: 마지막으로 조회한 시각을 registry에 남겨 재시작해도 이어서 읽는다.
+      - type: aws-cloudwatch
+        id: aws-cloudwatch-rds
+        log_group_name: ${RDS_LOG_GROUP}
+        region_name: ${AWS_REGION}
+        start_position: lastSync
+        scan_frequency: 1m
+        latency: 5m
+        fields:
+          aws_source: rds
+      - type: aws-cloudwatch
+        id: aws-cloudwatch-neptune
+        log_group_name: ${NEPTUNE_LOG_GROUP}
+        region_name: ${AWS_REGION}
+        start_position: lastSync
+        scan_frequency: 1m
+        latency: 5m
+        fields:
+          aws_source: neptune
+      # EKS 컨트롤 플레인 로그 그룹. audit·authenticator 스트림을 Logstash가 스트림 이름으로 나눈다.
+      - type: aws-cloudwatch
+        id: aws-cloudwatch-eks
+        log_group_name: ${EKS_LOG_GROUP}
+        region_name: ${AWS_REGION}
+        start_position: lastSync
+        scan_frequency: 1m
+        latency: 5m
+        fields:
+          aws_source: eks
+
+    output.logstash:
+      hosts:
+        - logstash-ls-aws.monitoring.svc:5045
+
+  deployment:
+    replicas: 1
+    # 새 파드를 띄우기 전에 옛 파드를 내린다. 두 파드가 동시에 같은 원천을 읽지 않고, RWO 디스크도 넘겨받을 수 있다.
+    strategy:
+      type: Recreate
+    podTemplate:
+      spec:
+        # EKS Pod Identity 연결(monitoring/filebeat-aws)이 이 이름을 기다린다.
+        serviceAccountName: filebeat-aws
+        # registry 디스크(EBS)가 2b에 묶이므로 로깅 노드에만 뜬다.
+        nodeSelector:
+          role: logging
+        tolerations:
+          - key: dedicated
+            operator: Equal
+            value: logging
+            effect: NoSchedule
+        # Filebeat는 uid 1000으로 돈다. EBS를 이 그룹으로 열어 registry를 쓸 수 있게 한다.
+        securityContext:
+          fsGroup: 1000
+        containers:
+          - name: filebeat
+            resources:
+              requests:
+                cpu: 50m
+                memory: 100Mi
+              limits:
+                memory: 300Mi
+        volumes:
+          # ECK가 붙이는 데이터 볼륨(beat-data, /usr/share/filebeat/data)을 PVC로 바꾼다. 같은 이름이면 이쪽이 쓰인다.
+          - name: beat-data
+            persistentVolumeClaim:
+              claimName: filebeat-aws-data
