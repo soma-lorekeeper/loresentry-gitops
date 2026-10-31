@@ -20,17 +20,19 @@ spec:
           # 파드 annotation(co.elastic.logs/*)으로 설정을 바꾸지 않는다. 규칙은 아래 templates에만 둔다.
           hints.enabled: false
           # 컨테이너마다 입력 하나. 두 template의 조건은 서로 겹치지 않아야 한다(겹치면 같은 파일을 두 번 읽는다).
+          # 조건 안의 label 이름은 원래 이름(strimzi.io/kind) 그대로 쓴다. '.'을 '_'로 바꾸는 dedot은 문서에 붙는
+          # kubernetes.labels.*에만 적용되고, 조건이 보는 autodiscover 이벤트에는 적용되지 않는다.
           templates:
             # Kafka 브로커와 Strimzi operator(entity-operator, cluster-operator): Java 예외처럼 날짜로 시작하지 않는 줄을
             # 앞 줄에 붙인다. 로그 줄은 모두 "2026-10-31 08:47:20 INFO ..."처럼 날짜로 시작한다.
             - condition:
                 or:
                   - equals:
-                      kubernetes.labels.strimzi_io/component-type: kafka
+                      kubernetes.labels.strimzi.io/component-type: kafka
                   - equals:
-                      kubernetes.labels.strimzi_io/component-type: entity-operator
+                      kubernetes.labels.strimzi.io/component-type: entity-operator
                   - equals:
-                      kubernetes.labels.strimzi_io/kind: cluster-operator
+                      kubernetes.labels.strimzi.io/kind: cluster-operator
               config:
                 - type: filestream
                   # 입력 id는 컨테이너마다 달라야 읽은 위치가 섞이지 않는다.
@@ -52,11 +54,11 @@ spec:
                 not:
                   or:
                     - equals:
-                        kubernetes.labels.strimzi_io/component-type: kafka
+                        kubernetes.labels.strimzi.io/component-type: kafka
                     - equals:
-                        kubernetes.labels.strimzi_io/component-type: entity-operator
+                        kubernetes.labels.strimzi.io/component-type: entity-operator
                     - equals:
-                        kubernetes.labels.strimzi_io/kind: cluster-operator
+                        kubernetes.labels.strimzi.io/kind: cluster-operator
               config:
                 - type: filestream
                   id: container-${data.kubernetes.container.id}

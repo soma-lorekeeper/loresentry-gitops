@@ -10,8 +10,9 @@ def register(params)
 
   # [찾는 패턴, 바꿀 값]. 위에서부터 차례로 적용한다. \1·\2는 패턴의 괄호 묶음을 그대로 남긴다.
   @rules = [
-    # 이메일: 로컬@도메인.최상위
-    [/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/, "[email]"],
+    # 이메일: 로컬@도메인.최상위. 클러스터 안 주소(.svc·.local·.internal)는 이메일이 아니라 남긴다
+    # (예: Kafka controller.quorum.voters의 0@lore-sentry-broker-0.lore-sentry-kafka-brokers.dev.svc:9090).
+    [/[A-Za-z0-9._%+-]+@(?![A-Za-z0-9.-]*\.(?:svc|local|internal)\b)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/, "[email]"],
     # 쿼리의 OAuth code·state, 광고 클릭 ID 값. 이름과 utm_*는 남긴다.
     # 앞이 ?·&인 URL 안의 값, 줄 맨 앞(url.query 필드), "로 시작하는 JSON 문자열(event.original의 "query":"code=...")을 잡는다.
     [/(^|[?&"])(code|state|gclid|gbraid|wbraid)=[^&\s"'#]+/, '\1\2=[redacted]'],
