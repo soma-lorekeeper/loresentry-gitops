@@ -4,7 +4,7 @@
     {
       "Sid": "ArchiveWrite",
       "Effect": "Allow",
-      "Action": ["s3:PutObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
+      "Action": ["s3:PutObject", "s3:PutObjectAcl", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
       "Resource": "arn:aws:s3:::__BUCKET__/*"
     },
     {

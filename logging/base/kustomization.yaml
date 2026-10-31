@@ -26,6 +26,7 @@ configMapGenerator:
       - logstash/pipelines/app-filter.conf
       - logstash/pipelines/app-output.conf
       - logstash/pipelines/to-es.conf
+      - logstash/pipelines/to-s3.conf
       - logstash/pipelines/mask.rb
 
 # Kustomize는 Logstash CR 안의 ConfigMap 참조를 모르므로 해시 붙은 이름으로 바꿀 자리를 알려 준다.

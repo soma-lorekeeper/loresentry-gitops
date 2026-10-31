@@ -99,6 +99,8 @@ ensure_role "$GRAPH_RAG_ROLE" "dev graph-rag-api pod: graph refresh bucket" "$GR
 ensure_role "$LOKI_ROLE" "dev loki pod: log chunks and index" "$LOKI_POLICY_ARN"
 # 로깅 스택 역할은 최소 권한으로 둘로 나눈다. Logstash는 보관 버킷에 쓰기만(지우기 없음),
 # aws-logs Filebeat는 원천 버킷과 정해진 로그 그룹 읽기만 한다.
+# Logstash S3 출력은 업로드마다 ACL(bucket-owner-full-control)을 붙이므로 PutObjectAcl도 준다.
+# 버킷은 ACL이 꺼져 있어(BucketOwnerEnforced) 이 권한으로 접근 범위가 넓어지지 않는다.
 LOGSTASH_POLICY_ARN="$(ensure_policy "$LOGSTASH_POLICY" "${BOOTSTRAP_AWS_DIR}/iam-log-archive-policy.json" "$ARCHIVE_BUCKET")"
 sed -e "s|__ACCOUNT__|${ACCOUNT}|g" -e "s|__REGION__|${AWS_REGION}|g" \
   -e "s|__RDS_LOG_GROUP__|${RDS_LOG_GROUP}|g" -e "s|__NEPTUNE_LOG_GROUP__|${NEPTUNE_LOG_GROUP}|g" \
