@@ -20,11 +20,14 @@ spec:
       clusterName: logs
 
   # 입력 pipeline과 출력 pipeline을 나눈다(output isolator). 출력마다 큐가 따로 있어 한 출력이 막혀도 다른 출력은 계속된다.
-  # 막힌 쪽 큐가 가득 차면 입력 pipeline이 기다리므로 그때는 다른 출력도 멈춘다. 5단계에서 aws 입력을 더한다.
+  # 막힌 쪽 큐가 가득 차면 입력 pipeline이 기다리므로 그때는 다른 출력도 멈춘다.
   pipelines:
     # 파드 로그 입력·가공. 파일 이름 순(filter → input → output)으로 읽어 하나의 pipeline이 된다.
     - pipeline.id: app
       path.config: /usr/share/logstash/pipelines/app-*.conf
+    # AWS 관리형 로그(ALB·CloudFront·RDS·Neptune·EKS) 입력·가공. aws-logs Filebeat가 보낸다.
+    - pipeline.id: aws
+      path.config: /usr/share/logstash/pipelines/aws-*.conf
     # ES 출력. 디스크 큐는 logstash-data PVC의 data/queue/to-es에 생긴다.
     - pipeline.id: to-es
       path.config: /usr/share/logstash/pipelines/to-es.conf
@@ -36,8 +39,9 @@ spec:
       queue.type: persisted
       queue.max_bytes: 2gb
 
-  # Filebeat가 붙는 Service. 이름은 <CR 이름>-ls-<name> = logstash-ls-beats.
+  # Filebeat가 붙는 Service. 이름은 <CR 이름>-ls-<name>.
   services:
+    # 노드마다 뜬 Filebeat(파드 로그) → app pipeline
     - name: beats
       service:
         spec:
@@ -46,6 +50,16 @@ spec:
             - name: beats
               port: 5044
               targetPort: 5044
+              protocol: TCP
+    # aws-logs Filebeat(AWS 관리형 로그) → aws pipeline. 이름은 logstash-ls-aws.
+    - name: aws
+      service:
+        spec:
+          type: ClusterIP
+          ports:
+            - name: beats
+              port: 5045
+              targetPort: 5045
               protocol: TCP
 
   # ECK 기본 PVC(1.5Gi, 기본 StorageClass)를 디스크 큐 크기에 맞춰 바꾼다. 이름은 logstash-data여야 한다.

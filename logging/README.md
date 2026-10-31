@@ -23,10 +23,14 @@ logging/
 │   ├── logstash/
 │   │   ├── logstash.yaml         Logstash, Service logstash-ls-beats:5044 (wave 2)
 │   │   ├── serviceaccount.yaml   Pod Identity 연결 대상
-│   │   └── pipelines/            app(입력·가공) → to-es·to-s3(출력) pipeline, 마스킹 mask.rb
-│   └── filebeat/
-│       ├── filebeat.yaml         노드마다 하나, 파드 로그 → Logstash (wave 2)
-│       └── rbac.yaml             파드·namespace·노드 읽기
+│   │   └── pipelines/            app·aws(입력·가공) → to-es·to-s3(출력) pipeline, 마스킹 mask.rb, 출처별 aws-*.rb
+│   ├── filebeat/
+│   │   ├── filebeat.yaml         노드마다 하나, 파드 로그 → Logstash 5044 (wave 2)
+│   │   └── rbac.yaml             파드·namespace·노드 읽기
+│   └── filebeat-aws/
+│       ├── filebeat-aws.yaml     1대, S3 원천 버킷·CloudWatch 로그 그룹 → Logstash 5045 (wave 2)
+│       ├── serviceaccount.yaml   Pod Identity 연결 대상
+│       └── pvc.yaml              읽은 위치(registry) 1Gi
 └── overlays/
     ├── dev/                      dev 값 (Kibana 주소·Ingress, 환경·클러스터 이름)
     └── prod/                     prod 값 (dev 검증이 끝난 뒤 prod에 반영할 때 추가)
@@ -59,6 +63,25 @@ Logstash `to-s3`가 ES에 넣는 것과 같은 가공·마스킹 결과를 보�
 aws s3 cp s3://loresentry-log-archive-dev-197179613039/dev/2026/11/01/ ./archive --recursive
 zcat archive/*.gz | jq -c 'select(.log.level == "error") | {t: ."@timestamp", s: .service.name, m: .message}'
 ```
+
+## AWS 관리형 로그
+
+aws-logs Filebeat(`filebeat-aws`) 1대가 아래 원천을 읽어 Logstash `aws` pipeline으로 보낸다. 원천 이름은 overlay가 환경
+변수로 넣는다. 로그를 켜는 설정은 dev는 `bootstrap/dev/`, prod는 콘솔에서 한다.
+
+| 출처 | 원천 | 경로·스트림 | data stream |
+| --- | --- | --- | --- |
+| ALB 접근 로그 | S3 `loresentry-aws-logs-<env>-<계정>` | `alb/AWSLogs/<계정>/...` (버킷 정책이 이 경로만 허용) | `logs-aws.alb-<env>` |
+| CloudFront v2 (JSON) | 같은 버킷 | `cloudfront/...` | `logs-aws.cloudfront-<env>` |
+| RDS PostgreSQL | CloudWatch `/aws/rds/instance/<id>/postgresql` | | `logs-aws.rds-<env>` |
+| Neptune slowquery | CloudWatch `/aws/neptune/<id>/slowquery` | | `logs-aws.neptune-<env>` |
+| EKS audit·authenticator | CloudWatch `/aws/eks/<cluster>/cluster` | `kube-apiserver-audit-*`, `authenticator-*` | `logs-aws.eks_audit-<env>`, `logs-aws.eks_authenticator-<env>` |
+
+- CloudFront v2 로그를 켤 때 출력 형식은 JSON으로 하고, 필드에서 `cs(Cookie)`는 고르지 않는다(세션 쿠키).
+- `aws-cloudwatch` 입력은 Filebeat 9.5에서 BETA다. 마지막 조회 시각은 registry(`filebeat-aws-data`)에 남는다.
+- 출처를 알 수 없는 줄은 버리지 않고 `logs-aws.unknown-<env>`에 모은다. 여기에 쌓이면 규칙을 더한다.
+- Neptune 쿼리는 `pipelines/aws-neptune.rb`가 Gremlin 리터럴 값을 지운 뒤에만 남긴다. graph-rag에 새 라벨·키·코드를
+  더하면 이 파일의 허용 목록에도 더한다. 더하지 않으면 그 낱말도 `[redacted]`가 될 뿐 내용이 새지는 않는다.
 
 ## 누가 읽나
 

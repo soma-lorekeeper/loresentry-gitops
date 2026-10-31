@@ -6,7 +6,9 @@
 
 def register(params)
   # 마스킹할 필드. 없는 필드는 건너뛴다.
-  @fields = ["message", "[event][original]", "[url][query]", "[error][message]", "[error][stack_trace]"]
+  # url.original(ALB 요청 줄의 전체 URL)과 Referer에도 쿼리가 들어 있다.
+  @fields = ["message", "[event][original]", "[url][query]", "[url][original]", "[http][request][referrer]",
+             "[error][message]", "[error][stack_trace]"]
 
   # [찾는 패턴, 바꿀 값]. 위에서부터 차례로 적용한다. \1·\2는 패턴의 괄호 묶음을 그대로 남긴다.
   @rules = [

@@ -1,0 +1,16 @@
+# aws-logs Filebeat의 읽은 위치(registry). 처리한 S3 객체 목록과 로그 그룹별 마지막 조회 시각이 들어 있다.
+# ECK 기본값(노드 hostPath)은 노드가 바뀌면 사라져 30일치를 다시 읽으므로 EBS에 둔다.
+# gp3는 파드가 뜰 때 그 AZ에 만들어진다(로깅 노드, 2b).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: filebeat-aws-data
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+  resources:
+    requests:
+      storage: 1Gi
