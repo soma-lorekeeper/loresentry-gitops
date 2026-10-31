@@ -1,0 +1,90 @@
+# 로그 가공. Filebeat가 보낸 줄을 파싱·정규화·마스킹하고 ES로 보낸다. 규칙은 pipelines/ 아래 파일에 있다.
+# 만들어지는 것: StatefulSet logstash-ls, Service logstash-ls-beats(5044, Filebeat가 붙는 곳),
+#               PVC logstash-data(디스크 큐), ES 접속 계정과 환경 변수 LOGS_ES_*.
+# 환경 값(ENVIRONMENT·CLUSTER_NAME)은 overlay가 컨테이너 env에 더한다.
+apiVersion: logstash.k8s.elastic.co/v1alpha1
+kind: Logstash
+metadata:
+  name: logstash
+  annotations:
+    # wave 2: ES와 index template이 준비된 뒤.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  version: 9.5.5
+  count: 1
+
+  # ECK가 ES 접속 계정을 만들고 LOGS_ES_HOSTS·LOGS_ES_USER·LOGS_ES_PASSWORD·LOGS_ES_SSL_CERTIFICATE_AUTHORITY를 넣는다.
+  # 환경 변수 이름의 앞부분이 clusterName이다.
+  elasticsearchRefs:
+    - name: logs
+      clusterName: logs
+
+  # 입력 pipeline과 출력 pipeline을 나눈다(output isolator). 출력마다 큐가 따로 있어 한 출력이 막혀도 다른 출력은 계속된다.
+  # 4단계에서 to-s3, 5단계에서 aws 입력을 더한다.
+  pipelines:
+    # 파드 로그 입력·가공. 파일 이름 순(filter → input → output)으로 읽어 하나의 pipeline이 된다.
+    - pipeline.id: app
+      path.config: /usr/share/logstash/pipelines/app-*.conf
+    # ES 출력. 디스크 큐(기본 1GB까지)는 logstash-data PVC의 data/queue에 생긴다.
+    - pipeline.id: to-es
+      path.config: /usr/share/logstash/pipelines/to-es.conf
+      queue.type: persisted
+
+  # Filebeat가 붙는 Service. 이름은 <CR 이름>-ls-<name> = logstash-ls-beats.
+  services:
+    - name: beats
+      service:
+        spec:
+          type: ClusterIP
+          ports:
+            - name: beats
+              port: 5044
+              targetPort: 5044
+              protocol: TCP
+
+  # ECK 기본 PVC(1.5Gi, 기본 StorageClass)를 디스크 큐 크기에 맞춰 바꾼다. 이름은 logstash-data여야 한다.
+  volumeClaimTemplates:
+    - metadata:
+        name: logstash-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: gp3
+        resources:
+          requests:
+            storage: 5Gi
+
+  podTemplate:
+    spec:
+      # EKS Pod Identity 연결(monitoring/logstash)이 이 이름을 기다린다. 4단계에서 S3 보관에 쓴다.
+      # (spec.serviceAccountName은 다른 namespace의 ES 참조 권한 검사용이라 파드에 쓰이지 않는다.)
+      serviceAccountName: logstash
+      # 로깅 전용 노드(2b)에만 뜬다. 디스크 큐 EBS가 2b에 묶인다.
+      nodeSelector:
+        role: logging
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: logging
+          effect: NoSchedule
+      containers:
+        - name: logstash
+          env:
+            # 힙 1GB. 나머지는 디스크 큐·플러그인이 쓰는 힙 밖 메모리다.
+            - name: LS_JAVA_OPTS
+              value: "-Xms1g -Xmx1g"
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              memory: 2Gi
+          volumeMounts:
+            - name: pipelines
+              mountPath: /usr/share/logstash/pipelines
+              readOnly: true
+      volumes:
+        # pipelines/ 아래 파일. kustomization의 configMapGenerator가 만든다. 내용이 바뀌면 이름이 바뀌어 파드가 다시 뜬다.
+        - name: pipelines
+          configMap:
+            name: logstash-pipelines

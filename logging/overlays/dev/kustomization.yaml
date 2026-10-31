@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# dev 클러스터(lore-sentry-dev-k8s)의 로깅 스택. argocd-apps-dev/logging.yaml이 읽는다.
+namespace: monitoring
+
+resources:
+  - ../../base
+  - ingress.yaml
+
+patches:
+  # Kibana가 링크·리다이렉트에 쓰는 바깥 주소.
+  - target:
+      kind: Kibana
+      name: kibana
+    patch: |-
+      - op: add
+        path: /spec/config
+        value:
+          server.publicBaseUrl: https://kibana-dev.loresentry.com
+  # Logstash pipeline이 data stream 이름(logs-<dataset>-dev)과 공통 필드에 쓰는 값.
+  - target:
+      kind: Logstash
+      name: logstash
+    patch: |-
+      - op: add
+        path: /spec/podTemplate/spec/containers/0/env/-
+        value:
+          name: ENVIRONMENT
+          value: dev
+      - op: add
+        path: /spec/podTemplate/spec/containers/0/env/-
+        value:
+          name: CLUSTER_NAME
+          value: lore-sentry-dev-k8s

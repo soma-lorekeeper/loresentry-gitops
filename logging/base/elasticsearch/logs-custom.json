@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "loresentry additions to the built-in logs-*-* template. Rules: logging/SCHEMA.md",
+    "description": "loresentry additions to the built-in logs-*-* template. Rules: docs repository LOG_SCHEMA.md, logging/README.md",
     "managed_by": "loresentry-gitops"
   },
   "template": {
@@ -37,25 +37,13 @@
       "properties": {
         "log": {
           "properties": {
-            "level": { "type": "keyword" },
             "logger": { "type": "keyword" }
           }
         },
         "service": {
           "properties": {
             "name": { "type": "keyword" },
-            "environment": { "type": "keyword" },
             "version": { "type": "keyword" }
-          }
-        },
-        "trace": {
-          "properties": {
-            "id": { "type": "keyword" }
-          }
-        },
-        "span": {
-          "properties": {
-            "id": { "type": "keyword" }
           }
         },
         "http": {
@@ -91,12 +79,7 @@
         },
         "orchestrator": {
           "properties": {
-            "type": { "type": "keyword" },
-            "cluster": {
-              "properties": {
-                "name": { "type": "keyword" }
-              }
-            }
+            "type": { "type": "keyword" }
           }
         },
         "postgresql": {

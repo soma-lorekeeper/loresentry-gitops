@@ -1,0 +1,67 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: eck-operator
+  namespace: argocd
+  annotations:
+    # Ahead of logging so the Elasticsearch, Kibana, Logstash and Beat CRDs
+    # exist before the resources in that Application are applied.
+    argocd.argoproj.io/sync-wave: "-5"
+spec:
+  project: default
+
+  source:
+    repoURL: https://helm.elastic.co
+    chart: eck-operator
+    targetRevision: "3.5.0"
+    helm:
+      valuesObject:
+        # The operator watches every namespace; the logging stack lives in
+        # monitoring. CRDs come with the chart.
+        installCRDs: true
+
+        # Run on the dedicated logging node next to what it manages, so the
+        # general pool keeps its CPU headroom.
+        nodeSelector:
+          role: logging
+        tolerations:
+          - key: dedicated
+            operator: Equal
+            value: logging
+            effect: NoSchedule
+
+        resources:
+          requests:
+            cpu: 100m
+            memory: 150Mi
+          limits:
+            memory: 1Gi
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: elastic-system
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # The ECK CRDs are far past the size that a client-side apply can carry
+      # in its last-applied-configuration annotation.
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+
+  # The operator writes its own webhook certificate and patches the CA bundle
+  # in; the chart renders a placeholder. Without this, self-heal would put the
+  # placeholder back and every admission call would fail.
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      name: elastic-operator.elastic-system.k8s.elastic.co
+      jqPathExpressions:
+        - .webhooks[].clientConfig.caBundle
+    - kind: Secret
+      name: elastic-operator-webhook-cert
+      jqPathExpressions:
+        - .data

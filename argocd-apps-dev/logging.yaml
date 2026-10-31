@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: logging
+  namespace: argocd
+  annotations:
+    # After eck-operator (-5). Child Applications do not wait for each other's
+    # health here, so the options below let this one retry until the ECK CRDs
+    # exist.
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  project: default
+
+  # Elasticsearch, Kibana, Logstash and Filebeat for this cluster. Log rules:
+  # docs repository LOG_SCHEMA.md. Layout: logging/README.md.
+  source:
+    repoURL: https://github.com/soma-lorekeeper/loresentry-gitops.git
+    targetRevision: main
+    path: logging/overlays/dev
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

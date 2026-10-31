@@ -1,0 +1,76 @@
+# logs@custom component template을 ES에 넣는 일회성 Job.
+# template은 Kubernetes 리소스가 아니라 ES 안에 저장되는 설정이라 Argo CD가 직접 적용할 수 없다.
+# 이 Job이 Git의 logs-custom.json을 ES API로 옮긴다. sync마다 다시 돌아 ES 쪽 값을 Git과 같게 맞춘다.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: logs-index-template
+  annotations:
+    # wave 1: ES(wave 0)가 green이 된 뒤, 로그를 보내는 Logstash·Filebeat(wave 2)보다 먼저 돈다.
+    # 첫 data stream이 생기기 전에 레플리카 0이 들어가야 1노드 ES가 yellow가 되지 않는다.
+    # PostSync가 아니라 Sync hook인 이유: ES가 한 번 yellow가 되면 PostSync는 영영 실행되지 않는다.
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/hook: Sync
+    # 다음 sync 때 이전 Job을 지우고 새로 만든다.
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 6
+  activeDeadlineSeconds: 900
+  template:
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        role: logging
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: logging
+          effect: NoSchedule
+      containers:
+        - name: put-template
+          # 같은 노드의 ES가 이미 받아 둔 이미지라 따로 내려받지 않는다. curl만 쓴다.
+          image: docker.elastic.co/elasticsearch/elasticsearch:9.5.5
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              es=https://logs-es-http:9200
+              auth=(--cacert /ca/ca.crt -u "elastic:${ELASTIC_PASSWORD}")
+              # ES가 요청을 받을 때까지 기다린다(최대 10분).
+              for _ in $(seq 1 60); do
+                curl -sf "${auth[@]}" "${es}/_cluster/health" >/dev/null && break
+                sleep 10
+              done
+              curl -sf "${auth[@]}" -X PUT "${es}/_component_template/logs@custom" \
+                -H 'Content-Type: application/json' --data-binary @/template/logs-custom.json
+              echo
+              echo "logs@custom applied"
+          env:
+            # ECK가 만든 elastic 계정 비밀번호.
+            - name: ELASTIC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: logs-es-elastic-user
+                  key: elastic
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: ca
+              mountPath: /ca
+              readOnly: true
+            - name: template
+              mountPath: /template
+              readOnly: true
+      volumes:
+        # ES HTTPS 인증서를 믿기 위한 CA. ECK가 만든다.
+        - name: ca
+          secret:
+            secretName: logs-es-http-certs-public
+        # logs-custom.json. kustomization의 configMapGenerator가 만든다.
+        - name: template
+          configMap:
+            name: logs-custom-template

@@ -1,0 +1,113 @@
+# 파드 로그 수집. 노드마다 하나씩 떠서 그 노드의 컨테이너 로그 파일을 읽고 Logstash(app pipeline)로 보낸다.
+# 하는 일은 줄 읽기, CRI 형식 풀기, 여러 줄 묶기, kubernetes.* 붙이기뿐이다. 파싱·가공은 Logstash가 한다.
+# 읽은 위치(registry)는 ECK가 노드의 hostPath에 두므로 Filebeat가 다시 떠도 처음부터 다시 보내지 않는다.
+apiVersion: beat.k8s.elastic.co/v1beta1
+kind: Beat
+metadata:
+  name: filebeat
+  annotations:
+    # wave 2: Logstash와 같은 차례. Logstash가 늦게 뜨면 Filebeat는 연결될 때까지 다시 시도하며 기다린다.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  type: filebeat
+  version: 9.5.5
+  config:
+    filebeat.autodiscover:
+      providers:
+        - type: kubernetes
+          # 이 노드에 있는 파드만 본다.
+          node: ${NODE_NAME}
+          # 파드 annotation(co.elastic.logs/*)으로 설정을 바꾸지 않는다. 규칙은 아래 templates에만 둔다.
+          hints.enabled: false
+          # 컨테이너마다 입력 하나. 두 template의 조건은 서로 겹치지 않아야 한다(겹치면 같은 파일을 두 번 읽는다).
+          templates:
+            # Kafka 브로커와 Strimzi operator(entity-operator, cluster-operator): Java 예외처럼 날짜로 시작하지 않는 줄을
+            # 앞 줄에 붙인다. 로그 줄은 모두 "2026-10-31 08:47:20 INFO ..."처럼 날짜로 시작한다.
+            - condition:
+                or:
+                  - equals:
+                      kubernetes.labels.strimzi_io/component-type: kafka
+                  - equals:
+                      kubernetes.labels.strimzi_io/component-type: entity-operator
+                  - equals:
+                      kubernetes.labels.strimzi_io/kind: cluster-operator
+              config:
+                - type: filestream
+                  # 입력 id는 컨테이너마다 달라야 읽은 위치가 섞이지 않는다.
+                  id: container-${data.kubernetes.container.id}
+                  # /var/log/containers의 파일은 /var/log/pods로 가는 심볼릭 링크다.
+                  prospector.scanner.symlinks: true
+                  paths:
+                    - /var/log/containers/*-${data.kubernetes.container.id}.log
+                  parsers:
+                    # containerd 줄 형식(시각 stream 플래그 본문)을 풀고, 런타임이 16KB마다 나눈 줄을 다시 잇는다.
+                    - container: ~
+                    - multiline:
+                        type: pattern
+                        pattern: '^\d{4}-\d{2}-\d{2} '
+                        negate: true
+                        match: after
+            # 나머지 모든 컨테이너: 한 줄이 로그 하나. 우리 서비스는 앱 로그 규약에 따라 여러 줄 예외도 JSON 한 줄로 낸다.
+            - condition:
+                not:
+                  or:
+                    - equals:
+                        kubernetes.labels.strimzi_io/component-type: kafka
+                    - equals:
+                        kubernetes.labels.strimzi_io/component-type: entity-operator
+                    - equals:
+                        kubernetes.labels.strimzi_io/kind: cluster-operator
+              config:
+                - type: filestream
+                  id: container-${data.kubernetes.container.id}
+                  prospector.scanner.symlinks: true
+                  paths:
+                    - /var/log/containers/*-${data.kubernetes.container.id}.log
+                  parsers:
+                    - container: ~
+
+    output.logstash:
+      hosts:
+        - logstash-ls-beats.monitoring.svc:5044
+
+  daemonSet:
+    podTemplate:
+      spec:
+        # Kubernetes API에서 이 노드의 파드 목록과 label을 읽는다. 권한은 rbac.yaml.
+        # (spec.serviceAccountName은 다른 namespace의 ES 참조 권한 검사용이라 파드에 쓰이지 않는다.)
+        serviceAccountName: filebeat
+        automountServiceAccountToken: true
+        # 로깅 노드를 포함해 taint가 있는 모든 노드에 뜬다.
+        tolerations:
+          - operator: Exists
+        # /var/log/pods의 파일은 root 소유라 root로 읽는다. 쓰기는 hostPath registry에만 한다.
+        securityContext:
+          runAsUser: 0
+        containers:
+          - name: filebeat
+            env:
+              # autodiscover가 이 노드의 파드만 고르는 데 쓴다.
+              - name: NODE_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: spec.nodeName
+            resources:
+              requests:
+                cpu: 50m
+                memory: 100Mi
+              limits:
+                memory: 300Mi
+            volumeMounts:
+              - name: varlogcontainers
+                mountPath: /var/log/containers
+                readOnly: true
+              - name: varlogpods
+                mountPath: /var/log/pods
+                readOnly: true
+        volumes:
+          - name: varlogcontainers
+            hostPath:
+              path: /var/log/containers
+          - name: varlogpods
+            hostPath:
+              path: /var/log/pods
