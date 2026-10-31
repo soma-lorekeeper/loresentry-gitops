@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # dev AWS 관리형 로그를 켠다. 받는 쪽(로그 그룹·원천 버킷: 04, aws-logs Filebeat: logging/)이 먼저 있어야 한다.
-#   1. EKS 컨트롤 플레인 로그: audit, authenticator → ${EKS_LOG_GROUP}
+#   1. EKS 컨트롤 플레인 로그: authenticator → ${EKS_LOG_GROUP}
 #   2. RDS PostgreSQL postgresql 로그 → ${RDS_LOG_GROUP}
 #   3. Neptune slowquery 로그 → ${NEPTUNE_LOG_GROUP}
 #   4. CloudFront 표준 로그 v2 (${WEB_HOST}, ${MEDIA_HOST}) → 원천 버킷 cloudfront/ (JSON)
@@ -15,14 +15,14 @@ distribution_for() {
     --query "DistributionList.Items[?contains(Aliases.Items || \`[]\`, '$1')].Id | [0]" --output text
 }
 
-echo "== 1. EKS control plane logs: audit, authenticator"
-# audit(누가 무엇을 했나)와 authenticator(어떤 IAM 신원이 들어왔나)만 켠다. api·controllerManager·scheduler는
-# 양이 많고 쓸 일이 적어 끈다. 바꾸는 동안 클러스터가 몇 분 "업데이트 중"이 되지만 API와 워크로드는 그대로 돈다.
+echo "== 1. EKS control plane logs: authenticator"
+# authenticator(어떤 IAM 신원이 클러스터에 들어왔나)만 켜고 api·audit·controllerManager·scheduler는 끈다.
+# 바꾸는 동안 클러스터가 몇 분 "업데이트 중"이 되지만 API와 워크로드는 그대로 돈다.
 ENABLED="$(aws eks describe-cluster --name "$CLUSTER" \
   --query 'cluster.logging.clusterLogging[?enabled].types[] | sort(@) | join(`,`, @)' --output text)"
-if [ "$ENABLED" != "audit,authenticator" ]; then
+if [ "$ENABLED" != "authenticator" ]; then
   UPDATE_ID="$(aws eks update-cluster-config --name "$CLUSTER" \
-    --logging '{"clusterLogging":[{"types":["audit","authenticator"],"enabled":true},{"types":["api","controllerManager","scheduler"],"enabled":false}]}' \
+    --logging '{"clusterLogging":[{"types":["authenticator"],"enabled":true},{"types":["api","audit","controllerManager","scheduler"],"enabled":false}]}' \
     --query update.id --output text)"
   for _ in $(seq 1 60); do
     STATUS="$(aws eks describe-update --name "$CLUSTER" --update-id "$UPDATE_ID" --query update.status --output text)"
@@ -32,7 +32,7 @@ if [ "$ENABLED" != "audit,authenticator" ]; then
   echo "update ${UPDATE_ID}: ${STATUS}"
   [ "$STATUS" = "Successful" ]
 else
-  echo "already audit,authenticator"
+  echo "already authenticator only"
 fi
 
 echo "== 2. RDS ${POSTGRES_ID}: export postgresql log"

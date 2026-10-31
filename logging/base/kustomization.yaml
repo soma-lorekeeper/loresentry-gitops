@@ -34,7 +34,6 @@ configMapGenerator:
       - logstash/pipelines/aws-alb.rb
       - logstash/pipelines/aws-cloudfront.rb
       - logstash/pipelines/aws-neptune.rb
-      - logstash/pipelines/aws-eks-audit.rb
       - logstash/pipelines/to-es.conf
       - logstash/pipelines/to-s3.conf
       - logstash/pipelines/mask.rb
