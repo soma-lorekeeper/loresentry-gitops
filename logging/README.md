@@ -67,7 +67,8 @@ zcat archive/*.gz | jq -c 'select(.log.level == "error") | {t: ."@timestamp", s:
 ## AWS 관리형 로그
 
 aws-logs Filebeat(`filebeat-aws`) 1대가 아래 원천을 읽어 Logstash `aws` pipeline으로 보낸다. 원천 이름은 overlay가 환경
-변수로 넣는다. 로그를 켜는 설정은 dev는 `bootstrap/dev/08-aws-logs.sh`, prod는 콘솔에서 한다.
+변수로 넣는다. 로그를 켜는 설정은 dev는 `bootstrap/dev/08-aws-logs.sh`(ALB만 `argocd-apps-dev/aws-load-balancer-controller.yaml`의
+IngressClassParams `loadBalancerAttributes`), prod는 콘솔에서 한다.
 
 | 출처 | 원천 | 경로·스트림 | data stream |
 | --- | --- | --- | --- |

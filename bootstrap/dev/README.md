@@ -94,6 +94,8 @@ Cloudflare에 `kibana-dev.loresentry.com CNAME <dev ALB DNS>`(프록시 끔)를 
 
 `08`은 받는 쪽(`04`의 버킷·로그 그룹, `logging/`의 aws-logs Filebeat)과 CloudFront 배포(`04`, `07`)가 생긴 뒤에 돌린다.
 `07`과 따로 둔 것은 `07`이 돌 때마다 prod rewrite 함수를 dev에 다시 게시하기 때문이다.
+ALB 접근 로그는 스크립트가 아니라 `argocd-apps-dev/aws-load-balancer-controller.yaml`의 IngressClassParams가 켠다
+(원천 버킷 `alb/`). 버킷 정책이 이 경로를 허용하지 않으면 같은 ALB 그룹의 Ingress 조정이 모두 실패한다.
 
 ### Cloudflare (프록시 끔)
 
