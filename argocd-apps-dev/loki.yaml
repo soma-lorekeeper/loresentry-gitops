@@ -3,6 +3,9 @@ kind: Application
 metadata:
   name: loki
   namespace: argocd
+  # Deleting this Application also deletes everything it deployed, not just the Application.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
   annotations:
     argocd.argoproj.io/sync-wave: "-4"
 spec:
