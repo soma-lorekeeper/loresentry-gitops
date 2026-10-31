@@ -62,7 +62,7 @@ cd bootstrap/dev
 ./05-cluster-bootstrap.sh  # Argo CD·Git 밖 Secret·논리 DB·root Application
 ./06-post-sync.sh        # LBC 웹훅 CA 정렬·실패한 앱 재동기화·Cloudflare 레코드 출력
 ./07-frontend.sh         # dev 프런트 버킷·CloudFront(prod 설정 복사)·rewrite 함수·CI 배포 권한
-./08-aws-logs.sh         # AWS 관리형 로그 켜기: EKS audit·authenticator, RDS·Neptune 내보내기, CloudFront v2   ~5분
+./08-aws-logs.sh         # AWS 관리형 로그 켜기: EKS authenticator, RDS·Neptune 내보내기, CloudFront v2   ~5분
 ./set-google-oauth.sh    # Google 콘솔에서 만든 dev OAuth 클라이언트 값을 넣고 auth 재시작
 ```
 
@@ -83,7 +83,7 @@ cd bootstrap/dev
 | 역할 `lore-sentry-dev-logstash-role` → `monitoring/logstash` | `04` | 보관 버킷 쓰기만 (지우기 없음) |
 | 역할 `lore-sentry-dev-filebeat-aws-role` → `monitoring/filebeat-aws` | `04` | 원천 버킷, 아래 로그 그룹 읽기만 |
 | 로그 그룹 `/aws/rds/instance/lore-sentry-dev-postgres/postgresql`, `/aws/neptune/lore-sentry-dev-neptune/slowquery`, `/aws/eks/lore-sentry-dev-k8s/cluster` | `04` | 보존 30일. 서비스가 직접 만들면 "만료 없음"이 되므로 미리 만든다 |
-| 로그 켜기: EKS `audit`·`authenticator`, RDS `postgresql`, Neptune `slowquery` 내보내기 | `08` | 재부팅 없이 바로 적용된다. Neptune audit은 켜지 않는다 |
+| 로그 켜기: EKS `authenticator`, RDS `postgresql`, Neptune `slowquery` 내보내기 | `08` | 재부팅 없이 바로 적용된다. EKS·Neptune audit은 켜지 않는다 |
 | CloudFront 로그 전달(us-east-1): 대상 `lore-sentry-dev-cloudfront-logs`, 원천 `lore-sentry-dev-cloudfront-{dev,media-dev}` | `08` | 원천 버킷 `cloudfront/<배포 ID>/YYYY/MM/DD/HH/`에 JSON. 필드는 `env.sh`의 `CF_LOG_FIELDS`(쿠키 빼고) |
 
 새로 만드는 DB는 처음부터 로그용 파라미터 그룹을 쓴다. **이미 있는 DB**에 연결하려면 `ATTACH=1 ./03-databases.sh`를

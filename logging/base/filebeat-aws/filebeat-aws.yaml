@@ -1,6 +1,6 @@
 # AWS 관리형 로그 수집. 노드 파일이 아니라 AWS API에서 가져오므로 클러스터에 1대만 둔다(여러 대면 같은 로그를 두 번 읽는다).
 #   - S3 원천 버킷(ALB 접근 로그, CloudFront v2 로그)을 주기적으로 훑어 새 객체를 읽는다
-#   - CloudWatch 로그 그룹(RDS PostgreSQL, Neptune slowquery, EKS audit·authenticator)을 1분마다 조회한다
+#   - CloudWatch 로그 그룹(RDS PostgreSQL, Neptune slowquery, EKS authenticator)을 1분마다 조회한다
 # 보내는 곳은 Logstash aws pipeline(logstash-ls-aws:5045). 파싱·마스킹은 Logstash가 한다.
 # 버킷·로그 그룹 이름은 환경마다 달라 overlay가 컨테이너 env(AWS_LOGS_BUCKET, *_LOG_GROUP)로 넣는다.
 # 로그를 켜는 것은 6단계다. 그 전에는 빈 원천을 조회만 하며 기다린다.
@@ -57,7 +57,7 @@ spec:
         latency: 5m
         fields:
           aws_source: neptune
-      # EKS 컨트롤 플레인 로그 그룹. audit·authenticator 스트림을 Logstash가 스트림 이름으로 나눈다.
+      # EKS 컨트롤 플레인 로그 그룹. 켜는 것은 authenticator 스트림뿐이고, Logstash가 스트림 이름으로 가린다.
       - type: aws-cloudwatch
         id: aws-cloudwatch-eks
         log_group_name: ${EKS_LOG_GROUP}

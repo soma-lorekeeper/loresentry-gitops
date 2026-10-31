@@ -76,7 +76,7 @@ IngressClassParams `loadBalancerAttributes`), prod는 콘솔에서 한다.
 | CloudFront v2 (JSON) | 같은 버킷 | `cloudfront/<배포 ID>/YYYY/MM/DD/HH/...` | `logs-aws.cloudfront-<env>` |
 | RDS PostgreSQL | CloudWatch `/aws/rds/instance/<id>/postgresql` | | `logs-aws.rds-<env>` |
 | Neptune slowquery | CloudWatch `/aws/neptune/<id>/slowquery` | | `logs-aws.neptune-<env>` |
-| EKS audit·authenticator | CloudWatch `/aws/eks/<cluster>/cluster` | `kube-apiserver-audit-*`, `authenticator-*` | `logs-aws.eks_audit-<env>`, `logs-aws.eks_authenticator-<env>` |
+| EKS authenticator | CloudWatch `/aws/eks/<cluster>/cluster` | `authenticator-*` | `logs-aws.eks_authenticator-<env>` |
 
 - CloudFront v2 출력 형식은 JSON이고(전달 대상을 만들 때만 정할 수 있다), 필드는 `bootstrap/dev/env.sh`의
   `CF_LOG_FIELDS`다. `cs(Cookie)`(세션 쿠키)와 `viewer-*-log-data`는 고르지 않는다.
