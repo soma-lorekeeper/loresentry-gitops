@@ -1,0 +1,28 @@
+# Kibana를 dev ALB에 붙인다. 형식은 platform-dev/argocd/ingress.yaml과 같다(ALB가 TLS를 끝내고 다시 HTTPS로 Kibana에 붙는다).
+# DNS: Cloudflare kibana-dev → dev ALB (CNAME, 프록시 끔). 인증서는 ALB의 *.loresentry.com.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kibana
+  annotations:
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    # Kibana는 ECK가 만든 자체 서명 인증서로 HTTPS만 받는다. ALB는 백엔드 인증서를 검증하지 않는다.
+    alb.ingress.kubernetes.io/backend-protocol: HTTPS
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTPS
+    # 로그인 없이 200을 주는 경로. /api/status는 인증이 필요해 401이 된다.
+    alb.ingress.kubernetes.io/healthcheck-path: /login
+    alb.ingress.kubernetes.io/success-codes: "200-399"
+spec:
+  ingressClassName: alb
+  rules:
+    - host: kibana-dev.loresentry.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                # ECK가 Kibana CR(kibana)로 만드는 Service
+                name: kibana-kb-http
+                port:
+                  number: 5601

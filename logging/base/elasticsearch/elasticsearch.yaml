@@ -1,0 +1,53 @@
+# 로그 저장소. ECK operator가 이 CR을 보고 StatefulSet·Service·TLS 인증서·elastic 계정 Secret을 만든다.
+# 만들어지는 것: Service logs-es-http(9200, HTTPS), Secret logs-es-elastic-user(elastic 비밀번호),
+#               Secret logs-es-http-certs-public(클라이언트가 믿을 CA).
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata:
+  name: logs
+  annotations:
+    # wave 0: 가장 먼저 뜬다. 같은 앱 안에서는 이 리소스가 Healthy(green)가 된 뒤에 다음 wave로 넘어간다.
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  version: 9.5.5
+
+  # 기본값(DeleteOnScaledownAndClusterDeletion)은 이 CR을 지우면 데이터 디스크도 지운다.
+  # 실수로 CR을 지워도 30일치 로그가 남도록 디스크는 남기고, 지우는 건 사람이 확인한 뒤에 한다.
+  volumeClaimDeletePolicy: DeleteOnScaledownOnly
+
+  nodeSets:
+    - name: default
+      # 1대. 샤드 사본(replica)은 원본과 다른 노드에만 둘 수 있으므로 index template에서 0으로 둔다.
+      count: 1
+      config:
+        # 노드 커널 설정(vm.max_map_count)을 바꾸지 않고 동작하게 mmap을 쓰지 않는다.
+        node.store.allow_mmap: false
+      podTemplate:
+        spec:
+          # 로깅 전용 노드(2b)에만 뜬다. 디스크(EBS)가 2b에 묶이므로 노드가 바뀌어도 같은 AZ에 다시 뜬다.
+          nodeSelector:
+            role: logging
+          tolerations:
+            - key: dedicated
+              operator: Equal
+              value: logging
+              effect: NoSchedule
+          containers:
+            - name: elasticsearch
+              # 힙은 ES가 메모리 상한을 보고 자동으로 정한다(대략 절반). 남는 메모리는 검색용 파일 캐시가 된다.
+              resources:
+                requests:
+                  cpu: 500m
+                  memory: 3Gi
+                limits:
+                  memory: 3Gi
+      volumeClaimTemplates:
+        - metadata:
+            name: elasticsearch-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            storageClassName: gp3
+            resources:
+              requests:
+                storage: 20Gi

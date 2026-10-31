@@ -1,0 +1,32 @@
+# 로그 탐색 화면. ECK가 ES 접속 계정과 CA를 만들어 연결하고, 저장 객체 암호화 키도 자동으로 정한다.
+# 만들어지는 것: Service kibana-kb-http(5601, HTTPS, 자체 서명 인증서). ALB Ingress는 overlay에 있다.
+# 접속 주소(server.publicBaseUrl)는 환경마다 달라 overlay에서 정한다.
+apiVersion: kibana.k8s.elastic.co/v1
+kind: Kibana
+metadata:
+  name: kibana
+  annotations:
+    # wave 2: ES와 index template이 준비된 뒤.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  version: 9.5.5
+  count: 1
+  elasticsearchRef:
+    name: logs
+  podTemplate:
+    spec:
+      nodeSelector:
+        role: logging
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: logging
+          effect: NoSchedule
+      containers:
+        - name: kibana
+          resources:
+            requests:
+              cpu: 200m
+              memory: 1Gi
+            limits:
+              memory: 1536Mi

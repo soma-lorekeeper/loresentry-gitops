@@ -1,0 +1,4 @@
+[
+  { "ParameterName": "neptune_enable_slow_query_log", "ParameterValue": "info", "ApplyMethod": "immediate" },
+  { "ParameterName": "neptune_slow_query_log_threshold", "ParameterValue": "1000", "ApplyMethod": "immediate" }
+]

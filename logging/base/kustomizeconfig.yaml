@@ -1,0 +1,9 @@
+# configMapGenerator가 붙인 해시 이름을 CR(사용자 정의 리소스) 안의 참조에도 반영한다.
+# Job·Deployment 같은 기본 리소스는 Kustomize가 알아서 바꾸지만, ECK CR의 podTemplate은 모른다.
+nameReference:
+  - kind: ConfigMap
+    version: v1
+    fieldSpecs:
+      - kind: Logstash
+        group: logstash.k8s.elastic.co
+        path: spec/podTemplate/spec/volumes/configMap/name

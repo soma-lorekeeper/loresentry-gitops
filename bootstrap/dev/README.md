@@ -23,10 +23,11 @@ EIP 쿼터(5개 중 4개 사용)를 늘리지 않으려고 NAT를 새로 만들�
 | 공유 (건드리지 않는다) | dev 전용 |
 |---|---|
 | VPC `lore-sentry-vpc`, IGW, regional NAT, public 서브넷 | private 서브넷 `10.20.13.0/24`(2a)·`10.20.14.0/24`(2b), 라우팅 테이블 `lore-sentry-dev-private` |
-| ACM 인증서(ALB·CloudFront), ECR 이미지, CloudFront OAC | EKS 클러스터·노드 그룹·Pod Identity 연결, ALB(`group.name: lore-sentry-dev`) |
-| IAM 역할: 클러스터·노드·vpc-cni·ebs-csi·LBC | IAM 역할: `lore-sentry-dev-{content,graph-rag,loki}-role` — dev 버킷에만 접근 |
-| | RDS `lore-sentry-dev-postgres`, Neptune `lore-sentry-dev-neptune`, 각 SG(소스는 dev 클러스터 SG만) |
-| | S3 `loresentry-{media,refresh,logs,web}-dev-<account>`, CloudFront `media-dev.loresentry.com`·`dev.loresentry.com` |
+| ACM 인증서(ALB·CloudFront), ECR 이미지, CloudFront OAC | EKS 클러스터·노드 그룹(공용 pool, 로깅 전용 pool)·Pod Identity 연결, ALB(`group.name: lore-sentry-dev`) |
+| IAM 역할: 클러스터·노드·vpc-cni·ebs-csi·LBC | IAM 역할: `lore-sentry-dev-{content,graph-rag,loki,logstash,filebeat-aws}-role` — dev 버킷·로그 그룹에만 접근 |
+| | RDS `lore-sentry-dev-postgres`, Neptune `lore-sentry-dev-neptune`, 각 SG(소스는 dev 클러스터 SG만), 로그용 파라미터 그룹 |
+| | S3 `loresentry-{media,refresh,logs,web,log-archive,aws-logs}-dev-<account>`, CloudFront `media-dev.loresentry.com`·`dev.loresentry.com` |
+| | CloudWatch 로그 그룹(RDS·Neptune·EKS, 보존 30일) |
 
 격리는 보안 그룹이 맡는다. prod DB SG는 prod 클러스터 SG만, dev DB SG는 dev 클러스터 SG만 허용하고, 두 클러스터
 SG는 서로를 허용하지 않는다. 그래서 같은 VPC에 있어도 dev 파드가 prod DB·Kafka·파드에 닿지 않는다.
@@ -54,10 +55,10 @@ ALB로 들어오므로 NAT를 타지 않지만, 부하 발생기를 이 VPC의 p
 ```bash
 cd bootstrap/dev
 ./01-network.sh          # dev private 서브넷 + 라우팅 테이블(공유 NAT)                    ~10초
-./02-eks.sh              # 클러스터·애드온·노드 그룹·access entry·LBC Pod Identity·kubeconfig   ~20분
-./match-prod-azs.sh      # 노드를 prod처럼 2a 1 / 2b 2로 맞춘다 (노드 그룹이 2a 2 / 2b 1로 뜨면)  ~5분
-./03-databases.sh        # DB SG·서브넷 그룹·RDS·Neptune. 클러스터가 있어야 SG 인바운드가 붙는다   ~15분
-./04-storage-iam.sh      # dev 버킷·IAM·Pod Identity·media CloudFront
+./02-eks.sh              # 클러스터·애드온·노드 그룹(공용·로깅)·access entry·LBC Pod Identity·kubeconfig   ~20분
+./match-prod-azs.sh      # 공용 노드를 prod처럼 2a 1 / 2b 2로 맞춘다 (노드 그룹이 2a 2 / 2b 1로 뜨면)  ~5분
+./03-databases.sh        # DB SG·서브넷 그룹·로그용 파라미터 그룹·RDS·Neptune. 클러스터가 있어야 SG 인바운드가 붙는다   ~15분
+./04-storage-iam.sh      # dev 버킷·IAM·Pod Identity·로그 그룹·media CloudFront
 ./05-cluster-bootstrap.sh  # Argo CD·Git 밖 Secret·논리 DB·root Application
 ./06-post-sync.sh        # LBC 웹훅 CA 정렬·실패한 앱 재동기화·Cloudflare 레코드 출력
 ./07-frontend.sh         # dev 프런트 버킷·CloudFront(prod 설정 복사)·rewrite 함수·CI 배포 권한
@@ -67,6 +68,26 @@ cd bootstrap/dev
 `03`과 `04`는 `02`와 동시에 돌려도 된다. 클러스터가 아직 없으면 SG 규칙과 Pod Identity만 건너뛰고 안내를 남기니,
 클러스터가 뜬 뒤 한 번 더 실행한다. `05`의 root Application은 `main`의 `argocd-apps-dev/`를 읽으므로 매니페스트가
 `main`에 있어야 한다.
+
+### 로깅 (ELK)
+
+로그 수집 스택(`logging/`)이 쓰는 AWS 리소스도 위 스크립트가 만든다. 로그 규약은 docs 저장소 `LOG_SCHEMA.md`에 있다.
+
+| 리소스 | 만드는 곳 | 내용 |
+| --- | --- | --- |
+| 로깅 node group `lore-sentry-dev-logging-pool` | `02` | r7i.large 1대, 2b 서브넷만, label `role=logging`, taint `dedicated=logging:NoSchedule`. ES·Logstash의 EBS 디스크가 2b에 묶이므로 교체돼도 같은 AZ에 뜬다 |
+| 파라미터 그룹 `lore-sentry-dev-postgres18`, `lore-sentry-dev-neptune14` | `03` | 에러·느린 쿼리·잠금 대기(PostgreSQL), 느린 쿼리(Neptune) 로그. 값은 `bootstrap/aws/*-logging-parameters.json` |
+| 버킷 `loresentry-log-archive-dev-<account>` | `04` | Logstash가 쓰는 가공본 보관, 1년 |
+| 버킷 `loresentry-aws-logs-dev-<account>` | `04` | ALB(`alb/`)·CloudFront가 쓰는 원천 로그, 30일 |
+| 역할 `lore-sentry-dev-logstash-role` → `monitoring/logstash` | `04` | 보관 버킷 쓰기만 (지우기 없음) |
+| 역할 `lore-sentry-dev-filebeat-aws-role` → `monitoring/filebeat-aws` | `04` | 원천 버킷, 아래 로그 그룹 읽기만 |
+| 로그 그룹 `/aws/rds/instance/lore-sentry-dev-postgres/postgresql`, `/aws/neptune/lore-sentry-dev-neptune/slowquery`, `/aws/eks/lore-sentry-dev-k8s/cluster` | `04` | 보존 30일. 서비스가 직접 만들면 "만료 없음"이 되므로 미리 만든다 |
+
+새로 만드는 DB는 처음부터 로그용 파라미터 그룹을 쓴다. **이미 있는 DB**에 연결하려면 `ATTACH=1 ./03-databases.sh`를
+돌린다. 대기 중인 다른 변경이 있으면 멈추고, 재부팅은 하지 않는다. 그룹은 재부팅해야 적용되고, 연결만 해 두면 다음 유지보수
+재부팅 때 예정 없이 적용되므로 연결한 날 RDS와 Neptune을 따로 재부팅한다.
+
+Cloudflare에 `kibana-dev.loresentry.com CNAME <dev ALB DNS>`(프록시 끔)를 손으로 추가한다.
 
 ### Cloudflare (프록시 끔)
 
