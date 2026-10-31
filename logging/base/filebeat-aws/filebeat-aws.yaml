@@ -37,7 +37,8 @@ spec:
         ignore_older: 168h
         fields:
           aws_source: cloudfront
-      # CloudWatch 로그 그룹 3개. 늦게 도착하는 이벤트를 놓치지 않게 조회 구간을 5분 늦춘다(latency).
+      # CloudWatch 로그 그룹 3개. 조회는 이벤트 시각 기준이라, 늦게 도착한 줄이 이미 지나간 구간에 떨어지면 다시 읽지 않는다.
+      # 그래서 조회 구간을 2분 늦춘다(latency). dev 실측 도착 지연은 세 그룹 모두 최대 32초였다.
       # lastSync: 마지막으로 조회한 시각을 registry에 남겨 재시작해도 이어서 읽는다.
       - type: aws-cloudwatch
         id: aws-cloudwatch-rds
@@ -45,7 +46,7 @@ spec:
         region_name: ${AWS_REGION}
         start_position: lastSync
         scan_frequency: 1m
-        latency: 5m
+        latency: 2m
         fields:
           aws_source: rds
       - type: aws-cloudwatch
@@ -54,7 +55,7 @@ spec:
         region_name: ${AWS_REGION}
         start_position: lastSync
         scan_frequency: 1m
-        latency: 5m
+        latency: 2m
         fields:
           aws_source: neptune
       # EKS 컨트롤 플레인 로그 그룹. 켜는 것은 authenticator 스트림뿐이고, Logstash가 스트림 이름으로 가린다.
@@ -64,7 +65,7 @@ spec:
         region_name: ${AWS_REGION}
         start_position: lastSync
         scan_frequency: 1m
-        latency: 5m
+        latency: 2m
         fields:
           aws_source: eks
 
