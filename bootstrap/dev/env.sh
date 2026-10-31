@@ -92,6 +92,31 @@ CONTENT_REFRESH_POLICY=lore-sentry-dev-content-refresh-policy
 GRAPH_RAG_REFRESH_POLICY=lore-sentry-dev-graph-rag-refresh-policy
 LOKI_POLICY=lore-sentry-dev-loki-storage-policy
 
+# 로깅 스택(ELK). 매니페스트는 logging/, 로그 규약은 docs 저장소 LOG_SCHEMA.md
+LOGGING_NAMESPACE=monitoring
+# 로깅 전용 노드 1대. ES·Logstash 디스크(EBS)는 AZ에 묶이므로 2b 서브넷 하나에만 띄운다.
+# 그래야 노드가 교체돼도 같은 AZ에 다시 떠서 디스크가 그대로 붙는다.
+LOGGING_NODEGROUP=lore-sentry-dev-logging-pool
+LOGGING_SUBNET=lore-sentry-dev-private-b
+LOGGING_NODE_LABEL=role=logging                                   # 로깅 파드가 이 노드를 찾아오게
+LOGGING_NODE_TAINT=key=dedicated,value=logging,effect=NO_SCHEDULE   # 다른 파드는 못 오게
+ARCHIVE_BUCKET="loresentry-log-archive-dev-${ACCOUNT}"   # Logstash가 쓰는 가공본 보관 (1년)
+AWS_LOGS_BUCKET="loresentry-aws-logs-dev-${ACCOUNT}"     # ALB·CloudFront가 쓰는 원천 로그 (30일)
+LOGSTASH_ROLE=lore-sentry-dev-logstash-role               # 보관 버킷 쓰기만
+LOGSTASH_POLICY=lore-sentry-dev-log-archive-policy
+FILEBEAT_AWS_ROLE=lore-sentry-dev-filebeat-aws-role       # 원천 버킷·로그 그룹 읽기만
+FILEBEAT_AWS_POLICY=lore-sentry-dev-filebeat-aws-policy
+# RDS·Neptune·EKS가 이 이름의 로그 그룹에 쓴다. 04가 미리 만들어 보존 기간을 정한다.
+LOG_RETENTION_DAYS=30
+RDS_LOG_GROUP="/aws/rds/instance/${POSTGRES_ID}/postgresql"
+NEPTUNE_LOG_GROUP="/aws/neptune/${NEPTUNE_ID}/slowquery"
+EKS_LOG_GROUP="/aws/eks/${CLUSTER}/cluster"
+# 로그 설정을 담는 사용자 정의 파라미터 그룹. 기본 그룹(default.*)은 고칠 수 없다.
+POSTGRES_PARAM_GROUP=lore-sentry-dev-postgres18
+POSTGRES_PARAM_FAMILY=postgres18
+NEPTUNE_PARAM_GROUP=lore-sentry-dev-neptune14
+NEPTUNE_PARAM_FAMILY=neptune1.4
+
 ARGOCD_VERSION=v3.5.2
 ARGOCD_HOST=argocd-dev.loresentry.com
 API_HOST=api-dev.loresentry.com

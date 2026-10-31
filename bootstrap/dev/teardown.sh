@@ -37,7 +37,11 @@ if cluster_exists; then
   VOLUMES="$(kc get pv -o jsonpath='{range .items[*]}{.spec.csi.volumeHandle}{"\n"}{end}' 2>/dev/null || true)"
   kc delete pvc --all -A --wait=false >/dev/null 2>&1 || true
 
-  echo "== 2. node group and cluster"
+  echo "== 2. node groups and cluster"
+  if aws eks describe-nodegroup --cluster-name "$CLUSTER" --nodegroup-name "$LOGGING_NODEGROUP" >/dev/null 2>&1; then
+    aws eks delete-nodegroup --cluster-name "$CLUSTER" --nodegroup-name "$LOGGING_NODEGROUP" >/dev/null
+    aws eks wait nodegroup-deleted --cluster-name "$CLUSTER" --nodegroup-name "$LOGGING_NODEGROUP"
+  fi
   if aws eks describe-nodegroup --cluster-name "$CLUSTER" --nodegroup-name "$NODEGROUP" >/dev/null 2>&1; then
     aws eks delete-nodegroup --cluster-name "$CLUSTER" --nodegroup-name "$NODEGROUP" >/dev/null
     aws eks wait nodegroup-deleted --cluster-name "$CLUSTER" --nodegroup-name "$NODEGROUP"
@@ -77,6 +81,11 @@ for sg in "$POSTGRES_SG" "$NEPTUNE_SG"; do
     --query 'SecurityGroups[0].GroupId' --output text)"
   [ "$id" != "None" ] && aws ec2 delete-security-group --group-id "$id" && echo "deleted ${sg}"
 done
+# 로그용 파라미터 그룹은 쓰는 DB가 남아 있으면 지워지지 않으므로 DB를 지운 뒤에 지운다.
+aws rds delete-db-parameter-group --db-parameter-group-name "$POSTGRES_PARAM_GROUP" 2>/dev/null \
+  && echo "deleted ${POSTGRES_PARAM_GROUP}" || true
+aws neptune delete-db-cluster-parameter-group --db-cluster-parameter-group-name "$NEPTUNE_PARAM_GROUP" 2>/dev/null \
+  && echo "deleted ${NEPTUNE_PARAM_GROUP}" || true
 
 echo "== 5. CloudFront ${MEDIA_HOST}, ${WEB_HOST}"
 delete_distribution() {
@@ -107,7 +116,7 @@ if aws cloudfront describe-function --name "$WEB_FUNCTION" >/dev/null 2>&1; then
 fi
 
 echo "== 6. buckets"
-for bucket in "$MEDIA_BUCKET" "$REFRESH_BUCKET" "$LOGS_BUCKET" "$WEB_BUCKET"; do
+for bucket in "$MEDIA_BUCKET" "$REFRESH_BUCKET" "$LOGS_BUCKET" "$WEB_BUCKET" "$ARCHIVE_BUCKET" "$AWS_LOGS_BUCKET"; do
   if aws s3api head-bucket --bucket "$bucket" 2>/dev/null; then
     aws s3 rm "s3://${bucket}" --recursive --only-show-errors
     aws s3api delete-bucket --bucket "$bucket"
@@ -116,14 +125,15 @@ for bucket in "$MEDIA_BUCKET" "$REFRESH_BUCKET" "$LOGS_BUCKET" "$WEB_BUCKET"; do
 done
 
 echo "== 7. IAM"
-for role in "$CONTENT_ROLE" "$GRAPH_RAG_ROLE" "$LOKI_ROLE"; do
+for role in "$CONTENT_ROLE" "$GRAPH_RAG_ROLE" "$LOKI_ROLE" "$LOGSTASH_ROLE" "$FILEBEAT_AWS_ROLE"; do
   aws iam get-role --role-name "$role" >/dev/null 2>&1 || continue
   for arn in $(aws iam list-attached-role-policies --role-name "$role" --query 'AttachedPolicies[].PolicyArn' --output text); do
     aws iam detach-role-policy --role-name "$role" --policy-arn "$arn"
   done
   aws iam delete-role --role-name "$role" && echo "deleted ${role}"
 done
-for policy in "$CONTENT_MEDIA_POLICY" "$CONTENT_REFRESH_POLICY" "$GRAPH_RAG_REFRESH_POLICY" "$LOKI_POLICY"; do
+for policy in "$CONTENT_MEDIA_POLICY" "$CONTENT_REFRESH_POLICY" "$GRAPH_RAG_REFRESH_POLICY" "$LOKI_POLICY" \
+    "$LOGSTASH_POLICY" "$FILEBEAT_AWS_POLICY"; do
   arn="arn:aws:iam::${ACCOUNT}:policy/${policy}"
   aws iam get-policy --policy-arn "$arn" >/dev/null 2>&1 || continue
   for v in $(aws iam list-policy-versions --policy-arn "$arn" --query 'Versions[?IsDefaultVersion==`false`].VersionId' --output text); do
@@ -165,6 +175,11 @@ for id in $(private_subnet_ids); do
   aws ec2 delete-subnet --subnet-id "$id" && echo "deleted ${id}"
 done
 
+echo "== 9. CloudWatch log groups"
+for group in "$RDS_LOG_GROUP" "$NEPTUNE_LOG_GROUP" "$EKS_LOG_GROUP"; do
+  aws logs delete-log-group --log-group-name "$group" 2>/dev/null && echo "deleted ${group}" || true
+done
+
 echo
 echo "done. shared prod resources (VPC, NAT, IGW, public subnets, ACM, ECR, OAC, base IAM roles) were not touched."
-echo "remove the Cloudflare records api-dev, argocd-dev, grafana-dev, media-dev, dev."
+echo "remove the Cloudflare records api-dev, argocd-dev, grafana-dev, kibana-dev, media-dev, dev."

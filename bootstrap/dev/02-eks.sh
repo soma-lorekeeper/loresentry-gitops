@@ -75,7 +75,33 @@ for entry in "${ADDONS[@]}"; do
   echo "${name} ${status}"
 done
 
-echo "== 4. access entries"
+echo "== 4. logging node group ${LOGGING_NODEGROUP}"
+# 로깅 스택(ES·Kibana·Logstash) 전용 노드 1대. 기존 pool과 AMI·버전·디스크·역할이 같다.
+# 2b 서브넷 하나에만 둔다: ES·Logstash의 EBS 디스크가 2b에 묶여서, 노드가 교체돼도 같은 AZ에 떠야 디스크가 붙는다.
+# taint는 다른 파드를 막고, label은 로깅 파드가 nodeSelector로 이 노드를 찾게 한다.
+if ! aws eks describe-nodegroup --cluster-name "$CLUSTER" --nodegroup-name "$LOGGING_NODEGROUP" >/dev/null 2>&1; then
+  aws eks create-nodegroup \
+    --cluster-name "$CLUSTER" \
+    --nodegroup-name "$LOGGING_NODEGROUP" \
+    --kubernetes-version "$K8S_VERSION" \
+    --release-version "$NODE_RELEASE_VERSION" \
+    --ami-type "$NODE_AMI_TYPE" \
+    --capacity-type ON_DEMAND \
+    --instance-types "$NODE_INSTANCE_TYPE" \
+    --disk-size "$NODE_DISK_SIZE" \
+    --scaling-config minSize=1,maxSize=1,desiredSize=1 \
+    --update-config maxUnavailable=1 \
+    --node-repair-config enabled=true \
+    --subnets "$(subnet_id_by_name "$LOGGING_SUBNET")" \
+    --labels "$LOGGING_NODE_LABEL" \
+    --taints "$LOGGING_NODE_TAINT" \
+    --node-role "$NODE_ROLE_ARN" \
+    --tags "$TAGS_MAP" >/dev/null
+fi
+aws eks wait nodegroup-active --cluster-name "$CLUSTER" --nodegroup-name "$LOGGING_NODEGROUP"
+echo "logging node group active"
+
+echo "== 5. access entries"
 for user in $VIEWER_USERS; do
   arn="arn:aws:iam::${ACCOUNT}:user/${user}"
   if ! aws eks describe-access-entry --cluster-name "$CLUSTER" --principal-arn "$arn" >/dev/null 2>&1; then
@@ -86,7 +112,7 @@ done
 aws eks update-access-entry --cluster-name "$CLUSTER" --principal-arn "$ADMIN_SSO_ROLE_ARN" \
   --kubernetes-groups lore-viewers >/dev/null
 
-echo "== 5. pod identity for the load balancer controller"
+echo "== 6. pod identity for the load balancer controller"
 ASSOC_ID="$(aws eks list-pod-identity-associations --cluster-name "$CLUSTER" \
   --namespace kube-system --service-account aws-load-balancer-controller \
   --query 'associations[0].associationId' --output text)"
@@ -96,6 +122,6 @@ if [ "$ASSOC_ID" = "None" ] || [ -z "$ASSOC_ID" ]; then
     --role-arn "$LBC_ROLE_ARN" --tags "$TAGS_MAP" >/dev/null
 fi
 
-echo "== 6. kubeconfig context ${KUBE_CONTEXT}"
+echo "== 7. kubeconfig context ${KUBE_CONTEXT}"
 aws eks update-kubeconfig --name "$CLUSTER" --alias "$KUBE_CONTEXT" >/dev/null
 kc get nodes -L topology.kubernetes.io/zone

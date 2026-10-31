@@ -1,0 +1,33 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SourceObjects",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject"],
+      "Resource": "arn:aws:s3:::__BUCKET__/*"
+    },
+    {
+      "Sid": "SourceBucket",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
+      "Resource": "arn:aws:s3:::__BUCKET__"
+    },
+    {
+      "Sid": "LogGroups",
+      "Effect": "Allow",
+      "Action": ["logs:FilterLogEvents", "logs:GetLogEvents", "logs:DescribeLogStreams"],
+      "Resource": [
+        "arn:aws:logs:__REGION__:__ACCOUNT__:log-group:__RDS_LOG_GROUP__:*",
+        "arn:aws:logs:__REGION__:__ACCOUNT__:log-group:__NEPTUNE_LOG_GROUP__:*",
+        "arn:aws:logs:__REGION__:__ACCOUNT__:log-group:__EKS_LOG_GROUP__:*"
+      ]
+    },
+    {
+      "Sid": "DescribeLogGroups",
+      "Effect": "Allow",
+      "Action": ["logs:DescribeLogGroups"],
+      "Resource": "*"
+    }
+  ]
+}

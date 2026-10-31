@@ -81,6 +81,13 @@ aws s3api put-bucket-cors --bucket "$MEDIA_BUCKET" \
   --cors-configuration "file://${TEMPLATES}/media-bucket-cors.json"
 ensure_bucket "$REFRESH_BUCKET" graph-refresh "${TEMPLATES}/refresh-bucket-lifecycle.json"
 ensure_bucket "$LOGS_BUCKET" loki "${BOOTSTRAP_AWS_DIR}/loki-bucket-lifecycle.json"
+# 로깅 스택: Logstash가 쓰는 가공본 보관(1년)과, ALB·CloudFront가 쓰는 원천 로그(30일)를 나눈다.
+ensure_bucket "$ARCHIVE_BUCKET" log-archive "${BOOTSTRAP_AWS_DIR}/log-archive-bucket-lifecycle.json"
+ensure_bucket "$AWS_LOGS_BUCKET" aws-logs "${BOOTSTRAP_AWS_DIR}/aws-logs-bucket-lifecycle.json"
+# 원천 버킷에는 ALB(elasticloadbalancing)와 CloudFront(로그 전달 서비스)가 쓸 수 있게 허용한다.
+sed -e "s|__BUCKET__|${AWS_LOGS_BUCKET}|g" -e "s|__ACCOUNT__|${ACCOUNT}|g" \
+  "${BOOTSTRAP_AWS_DIR}/aws-logs-bucket-policy.json" > "${WORK}/aws-logs-bucket-policy.json"
+aws s3api put-bucket-policy --bucket "$AWS_LOGS_BUCKET" --policy "file://${WORK}/aws-logs-bucket-policy.json"
 
 echo "== 2. IAM"
 MEDIA_POLICY_ARN="$(ensure_policy "$CONTENT_MEDIA_POLICY" "${TEMPLATES}/iam-content-media-policy.json" "$MEDIA_BUCKET")"
@@ -90,17 +97,42 @@ LOKI_POLICY_ARN="$(ensure_policy "$LOKI_POLICY" "${BOOTSTRAP_AWS_DIR}/iam-loki-s
 ensure_role "$CONTENT_ROLE" "dev content-api pod: media and graph refresh buckets" "$MEDIA_POLICY_ARN" "$CONTENT_REFRESH_ARN"
 ensure_role "$GRAPH_RAG_ROLE" "dev graph-rag-api pod: graph refresh bucket" "$GRAPH_RAG_REFRESH_ARN"
 ensure_role "$LOKI_ROLE" "dev loki pod: log chunks and index" "$LOKI_POLICY_ARN"
+# 로깅 스택 역할은 최소 권한으로 둘로 나눈다. Logstash는 보관 버킷에 쓰기만(지우기 없음),
+# aws-logs Filebeat는 원천 버킷과 정해진 로그 그룹 읽기만 한다.
+LOGSTASH_POLICY_ARN="$(ensure_policy "$LOGSTASH_POLICY" "${BOOTSTRAP_AWS_DIR}/iam-log-archive-policy.json" "$ARCHIVE_BUCKET")"
+sed -e "s|__ACCOUNT__|${ACCOUNT}|g" -e "s|__REGION__|${AWS_REGION}|g" \
+  -e "s|__RDS_LOG_GROUP__|${RDS_LOG_GROUP}|g" -e "s|__NEPTUNE_LOG_GROUP__|${NEPTUNE_LOG_GROUP}|g" \
+  -e "s|__EKS_LOG_GROUP__|${EKS_LOG_GROUP}|g" \
+  "${BOOTSTRAP_AWS_DIR}/iam-filebeat-aws-policy.json" > "${WORK}/filebeat-aws-policy-template.json"
+FILEBEAT_AWS_POLICY_ARN="$(ensure_policy "$FILEBEAT_AWS_POLICY" "${WORK}/filebeat-aws-policy-template.json" "$AWS_LOGS_BUCKET")"
+ensure_role "$LOGSTASH_ROLE" "dev logstash pod: write the log archive" "$LOGSTASH_POLICY_ARN"
+ensure_role "$FILEBEAT_AWS_ROLE" "dev aws-logs filebeat pod: read ALB, CloudFront and CloudWatch logs" "$FILEBEAT_AWS_POLICY_ARN"
 
 echo "== 3. pod identity associations"
 if [ "$(aws eks describe-cluster --name "$CLUSTER" --query cluster.status --output text 2>/dev/null)" = "ACTIVE" ]; then
   ensure_association "$NAMESPACE" content-api "$CONTENT_ROLE"
   ensure_association "$NAMESPACE" graph-rag-api "$GRAPH_RAG_ROLE"
   ensure_association monitoring loki "$LOKI_ROLE"
+  # ServiceAccount가 아직 없어도 연결은 만들 수 있다. ServiceAccount는 로깅 스택을 배포할 때 생긴다.
+  ensure_association "$LOGGING_NAMESPACE" logstash "$LOGSTASH_ROLE"
+  ensure_association "$LOGGING_NAMESPACE" filebeat-aws "$FILEBEAT_AWS_ROLE"
 else
   echo "cluster ${CLUSTER} not active; rerun this script for the associations"
 fi
 
-echo "== 4. CloudFront ${MEDIA_HOST}"
+echo "== 4. CloudWatch log groups"
+# RDS·Neptune·EKS가 로그를 쓸 그룹을 미리 만들어 보존 기간을 정한다. 서비스가 직접 만들게 두면
+# 보존 기간이 "만료 없음"으로 생겨 계속 쌓인다. 로그를 켜는 것은 다음 단계에서 한다.
+for group in "$RDS_LOG_GROUP" "$NEPTUNE_LOG_GROUP" "$EKS_LOG_GROUP"; do
+  if [ "$(aws logs describe-log-groups --log-group-name-prefix "$group" \
+      --query "length(logGroups[?logGroupName=='${group}'])" --output text)" = "0" ]; then
+    aws logs create-log-group --log-group-name "$group" --tags "${TAGS_MAP},Component=logging"
+  fi
+  aws logs put-retention-policy --log-group-name "$group" --retention-in-days "$LOG_RETENTION_DAYS"
+  echo "log group ${group} (${LOG_RETENTION_DAYS} days)"
+done
+
+echo "== 5. CloudFront ${MEDIA_HOST}"
 OAC_ID="$(aws cloudfront list-origin-access-controls \
   --query "OriginAccessControlList.Items[?Name=='${MEDIA_OAC_NAME}'].Id | [0]" --output text)"
 CERT_ARN="$(aws acm list-certificates --region us-east-1 \

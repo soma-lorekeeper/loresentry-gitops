@@ -1,0 +1,7 @@
+[
+  { "ParameterName": "log_min_duration_statement", "ParameterValue": "1000", "ApplyMethod": "immediate" },
+  { "ParameterName": "log_parameter_max_length", "ParameterValue": "0", "ApplyMethod": "immediate" },
+  { "ParameterName": "log_lock_waits", "ParameterValue": "1", "ApplyMethod": "immediate" },
+  { "ParameterName": "log_temp_files", "ParameterValue": "10240", "ApplyMethod": "immediate" },
+  { "ParameterName": "log_line_prefix", "ParameterValue": "%m:%r:%u@%d:[%p]:%l:%e:%s:%v:%x:%c:%q%a:", "ApplyMethod": "immediate" }
+]

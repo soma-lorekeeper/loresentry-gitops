@@ -13,8 +13,9 @@ count_in() {
     --query "length(AutoScalingGroups[0].Instances[?AvailabilityZone=='$1' && LifecycleState=='InService'])"
 }
 
+# 기존 pool 노드만 센다. 로깅 node group 노드까지 세면 새 노드가 Ready가 되기 전에 drain을 시작한다.
 ready_nodes() {
-  kc get nodes --no-headers | awk '$2 == "Ready"' | wc -l | tr -d ' '
+  kc get nodes -l "eks.amazonaws.com/nodegroup=${NODEGROUP}" --no-headers | awk '$2 == "Ready"' | wc -l | tr -d ' '
 }
 
 echo "now: ${TARGET_ONE}=$(count_in $TARGET_ONE) ${TARGET_TWO}=$(count_in $TARGET_TWO) (prod: 1 / 2)"
@@ -32,7 +33,8 @@ aws eks update-nodegroup-config --cluster-name "$CLUSTER" --nodegroup-name "$NOD
 aws eks wait nodegroup-active --cluster-name "$CLUSTER" --nodegroup-name "$NODEGROUP"
 until [ "$(count_in $TARGET_TWO)" = "2" ] && [ "$(ready_nodes)" -ge $((NODE_DESIRED + 1)) ]; do sleep 10; done
 
-NODE="$(kc get nodes -l "topology.kubernetes.io/zone=${TARGET_ONE}" -o jsonpath='{.items[0].metadata.name}')"
+NODE="$(kc get nodes -l "topology.kubernetes.io/zone=${TARGET_ONE},eks.amazonaws.com/nodegroup=${NODEGROUP}" \
+  -o jsonpath='{.items[0].metadata.name}')"
 INSTANCE="$(kc get node "$NODE" -o jsonpath='{.spec.providerID}' | awk -F/ '{print $NF}')"
 echo "draining ${NODE} (${INSTANCE})"
 kc drain "$NODE" --ignore-daemonsets --delete-emptydir-data --timeout=300s >/dev/null
