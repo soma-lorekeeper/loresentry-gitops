@@ -111,6 +111,17 @@ LOG_RETENTION_DAYS=30
 RDS_LOG_GROUP="/aws/rds/instance/${POSTGRES_ID}/postgresql"
 NEPTUNE_LOG_GROUP="/aws/neptune/${NEPTUNE_ID}/slowquery"
 EKS_LOG_GROUP="/aws/eks/${CLUSTER}/cluster"
+# CloudFront 표준 로그 v2. 설정 API(CloudWatch Logs 전달)는 us-east-1에만 있고, 로그는 원천 버킷 cloudfront/로 간다.
+CF_LOG_DESTINATION=lore-sentry-dev-cloudfront-logs        # 전달 대상(원천 버킷, JSON). 형식은 만들 때만 정할 수 있다
+CF_LOG_SOURCE_PREFIX=lore-sentry-dev-cloudfront           # 배포마다 전달 원천 하나: <접두어>-<호스트 첫 칸>
+# 고르는 필드. cs(Cookie)(세션 쿠키), viewer-*-log-data(사용자 정의 값), 쓰지 않는 기능의 칸은 넣지 않는다.
+CF_LOG_FIELDS=(
+  "timestamp(ms)" DistributionId date time x-edge-location sc-bytes c-ip c-port c-country
+  cs-method "cs(Host)" cs-uri-stem cs-uri-query sc-status "cs(Referer)" "cs(User-Agent)"
+  x-edge-result-type x-edge-response-result-type x-edge-detailed-result-type x-edge-request-id x-host-header
+  cs-protocol cs-protocol-version cs-bytes time-taken time-to-first-byte origin-fbl origin-lbl x-forwarded-for
+  ssl-protocol ssl-cipher sc-content-type sc-content-len cache-behavior-path-pattern
+)
 # 로그 설정을 담는 사용자 정의 파라미터 그룹. 기본 그룹(default.*)은 고칠 수 없다.
 POSTGRES_PARAM_GROUP=lore-sentry-dev-postgres18
 POSTGRES_PARAM_FAMILY=postgres18

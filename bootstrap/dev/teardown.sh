@@ -107,6 +107,18 @@ delete_distribution() {
 }
 WEB_DIST_ID="$(aws cloudfront list-distributions \
   --query "DistributionList.Items[?contains(Aliases.Items || \`[]\`, '${WEB_HOST}')].Id | [0]" --output text)"
+# 08이 만든 로그 전달(us-east-1)을 배포보다 먼저 지운다. 전달 → 전달 원천 → 전달 대상 순서여야 지워진다.
+for source in $(aws logs describe-delivery-sources --region us-east-1 \
+    --query "deliverySources[?starts_with(name, '${CF_LOG_SOURCE_PREFIX}-')].name" --output text); do
+  for delivery in $(aws logs describe-deliveries --region us-east-1 \
+      --query "deliveries[?deliverySourceName=='${source}'].id" --output text); do
+    aws logs delete-delivery --region us-east-1 --id "$delivery"
+  done
+  aws logs delete-delivery-source --region us-east-1 --name "$source"
+  echo "deleted delivery source ${source}"
+done
+aws logs delete-delivery-destination --region us-east-1 --name "$CF_LOG_DESTINATION" 2>/dev/null \
+  && echo "deleted ${CF_LOG_DESTINATION}" || true
 delete_distribution "$MEDIA_HOST"
 delete_distribution "$WEB_HOST"
 if aws cloudfront describe-function --name "$WEB_FUNCTION" >/dev/null 2>&1; then
