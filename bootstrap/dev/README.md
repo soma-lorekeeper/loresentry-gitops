@@ -62,6 +62,7 @@ cd bootstrap/dev
 ./05-cluster-bootstrap.sh  # Argo CD·Git 밖 Secret·논리 DB·root Application
 ./06-post-sync.sh        # LBC 웹훅 CA 정렬·실패한 앱 재동기화·Cloudflare 레코드 출력
 ./07-frontend.sh         # dev 프런트 버킷·CloudFront(prod 설정 복사)·rewrite 함수·CI 배포 권한
+./08-aws-logs.sh         # AWS 관리형 로그 켜기: EKS audit·authenticator, RDS·Neptune 내보내기, CloudFront v2   ~5분
 ./set-google-oauth.sh    # Google 콘솔에서 만든 dev OAuth 클라이언트 값을 넣고 auth 재시작
 ```
 
@@ -78,16 +79,21 @@ cd bootstrap/dev
 | 로깅 node group `lore-sentry-dev-logging-pool` | `02` | r7i.large 1대, 2b 서브넷만, label `role=logging`, taint `dedicated=logging:NoSchedule`. ES·Logstash의 EBS 디스크가 2b에 묶이므로 교체돼도 같은 AZ에 뜬다 |
 | 파라미터 그룹 `lore-sentry-dev-postgres18`, `lore-sentry-dev-neptune14` | `03` | 에러·느린 쿼리·잠금 대기(PostgreSQL), 느린 쿼리(Neptune) 로그. 값은 `bootstrap/aws/*-logging-parameters.json` |
 | 버킷 `loresentry-log-archive-dev-<account>` | `04` | Logstash가 쓰는 가공본 보관, 1년 |
-| 버킷 `loresentry-aws-logs-dev-<account>` | `04` | ALB(`alb/`)·CloudFront가 쓰는 원천 로그, 30일 |
+| 버킷 `loresentry-aws-logs-dev-<account>` | `04` | ALB(`alb/`)·CloudFront(`cloudfront/`)가 쓰는 원천 로그, 30일. 버킷 정책이 각자 자기 접두어에만 쓰게 한다 |
 | 역할 `lore-sentry-dev-logstash-role` → `monitoring/logstash` | `04` | 보관 버킷 쓰기만 (지우기 없음) |
 | 역할 `lore-sentry-dev-filebeat-aws-role` → `monitoring/filebeat-aws` | `04` | 원천 버킷, 아래 로그 그룹 읽기만 |
 | 로그 그룹 `/aws/rds/instance/lore-sentry-dev-postgres/postgresql`, `/aws/neptune/lore-sentry-dev-neptune/slowquery`, `/aws/eks/lore-sentry-dev-k8s/cluster` | `04` | 보존 30일. 서비스가 직접 만들면 "만료 없음"이 되므로 미리 만든다 |
+| 로그 켜기: EKS `audit`·`authenticator`, RDS `postgresql`, Neptune `slowquery` 내보내기 | `08` | 재부팅 없이 바로 적용된다. Neptune audit은 켜지 않는다 |
+| CloudFront 로그 전달(us-east-1): 대상 `lore-sentry-dev-cloudfront-logs`, 원천 `lore-sentry-dev-cloudfront-{dev,media-dev}` | `08` | 원천 버킷 `cloudfront/<배포 ID>/YYYY/MM/DD/HH/`에 JSON. 필드는 `env.sh`의 `CF_LOG_FIELDS`(쿠키 빼고) |
 
 새로 만드는 DB는 처음부터 로그용 파라미터 그룹을 쓴다. **이미 있는 DB**에 연결하려면 `ATTACH=1 ./03-databases.sh`를
 돌린다. 대기 중인 다른 변경이 있으면 멈추고, 재부팅은 하지 않는다. 그룹은 재부팅해야 적용되고, 연결만 해 두면 다음 유지보수
 재부팅 때 예정 없이 적용되므로 연결한 날 RDS와 Neptune을 따로 재부팅한다.
 
 Cloudflare에 `kibana-dev.loresentry.com CNAME <dev ALB DNS>`(프록시 끔)를 손으로 추가한다.
+
+`08`은 받는 쪽(`04`의 버킷·로그 그룹, `logging/`의 aws-logs Filebeat)과 CloudFront 배포(`04`, `07`)가 생긴 뒤에 돌린다.
+`07`과 따로 둔 것은 `07`이 돌 때마다 prod rewrite 함수를 dev에 다시 게시하기 때문이다.
 
 ### Cloudflare (프록시 끔)
 
@@ -206,7 +212,7 @@ Neptune 약 $0.12, RDS 약 $0.03, ALB·EBS·공인 IPv4 약 $0.07. NAT는 공유
 CONFIRM=lore-sentry-dev-k8s bootstrap/dev/teardown.sh
 ```
 
-ALB를 먼저 놓아 준 뒤 클러스터, `Retain`으로 남는 EBS 볼륨, DB, CloudFront, 버킷, dev IAM, dev 서브넷 순으로
+ALB를 먼저 놓아 준 뒤 클러스터, `Retain`으로 남는 EBS 볼륨, DB, CloudFront(로그 전달 먼저), 버킷, dev IAM, dev 서브넷 순으로
 지운다. 공유 리소스는 건드리지 않는다. 끝나면 Cloudflare 레코드 다섯 개를 지운다.
 
 ## 처음 만들 때 겪은 것

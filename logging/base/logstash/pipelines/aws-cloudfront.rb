@@ -14,6 +14,7 @@ def register(params)
   @map = {
     "c-ip" => ["[source][ip]", :str],
     "c-port" => ["[source][port]", :int],
+    "c-country" => ["[source][geo][country_iso_code]", :str], # 접속 IP로 CloudFront가 정한 국가(ISO 3166-1 alpha-2)
     "cs-method" => ["[http][request][method]", :str],
     "x-host-header" => ["[url][domain]", :str],
     "cs-uri-stem" => ["[url][path]", :str],
@@ -36,7 +37,11 @@ def register(params)
     "x-forwarded-for" => ["[aws][cloudfront][x_forwarded_for]", :str],
     "cs(Host)" => ["[aws][cloudfront][distribution_domain]", :str],
     "DistributionId" => ["[aws][cloudfront][distribution_id]", :str],
-    "time-to-first-byte" => ["[aws][cloudfront][time_to_first_byte]", :float]
+    "time-to-first-byte" => ["[aws][cloudfront][time_to_first_byte]", :float],
+    "cache-behavior-path-pattern" => ["[aws][cloudfront][cache_behavior_path_pattern]", :str], # 요청이 걸린 캐시 동작(예: /assets/*)
+    # 오리진(S3) 응답의 첫 바이트·마지막 바이트까지 걸린 초. 캐시 적중이면 '-'라 빠진다
+    "origin-fbl" => ["[aws][cloudfront][origin_first_byte_latency]", :float],
+    "origin-lbl" => ["[aws][cloudfront][origin_last_byte_latency]", :float]
   }
 end
 

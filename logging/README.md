@@ -67,17 +67,18 @@ zcat archive/*.gz | jq -c 'select(.log.level == "error") | {t: ."@timestamp", s:
 ## AWS 관리형 로그
 
 aws-logs Filebeat(`filebeat-aws`) 1대가 아래 원천을 읽어 Logstash `aws` pipeline으로 보낸다. 원천 이름은 overlay가 환경
-변수로 넣는다. 로그를 켜는 설정은 dev는 `bootstrap/dev/`, prod는 콘솔에서 한다.
+변수로 넣는다. 로그를 켜는 설정은 dev는 `bootstrap/dev/08-aws-logs.sh`, prod는 콘솔에서 한다.
 
 | 출처 | 원천 | 경로·스트림 | data stream |
 | --- | --- | --- | --- |
 | ALB 접근 로그 | S3 `loresentry-aws-logs-<env>-<계정>` | `alb/AWSLogs/<계정>/...` (버킷 정책이 이 경로만 허용) | `logs-aws.alb-<env>` |
-| CloudFront v2 (JSON) | 같은 버킷 | `cloudfront/...` | `logs-aws.cloudfront-<env>` |
+| CloudFront v2 (JSON) | 같은 버킷 | `cloudfront/<배포 ID>/YYYY/MM/DD/HH/...` | `logs-aws.cloudfront-<env>` |
 | RDS PostgreSQL | CloudWatch `/aws/rds/instance/<id>/postgresql` | | `logs-aws.rds-<env>` |
 | Neptune slowquery | CloudWatch `/aws/neptune/<id>/slowquery` | | `logs-aws.neptune-<env>` |
 | EKS audit·authenticator | CloudWatch `/aws/eks/<cluster>/cluster` | `kube-apiserver-audit-*`, `authenticator-*` | `logs-aws.eks_audit-<env>`, `logs-aws.eks_authenticator-<env>` |
 
-- CloudFront v2 로그를 켤 때 출력 형식은 JSON으로 하고, 필드에서 `cs(Cookie)`는 고르지 않는다(세션 쿠키).
+- CloudFront v2 출력 형식은 JSON이고(전달 대상을 만들 때만 정할 수 있다), 필드는 `bootstrap/dev/env.sh`의
+  `CF_LOG_FIELDS`다. `cs(Cookie)`(세션 쿠키)와 `viewer-*-log-data`는 고르지 않는다.
 - `aws-cloudwatch` 입력은 Filebeat 9.5에서 BETA다. 마지막 조회 시각은 registry(`filebeat-aws-data`)에 남는다.
 - 출처를 알 수 없는 줄은 버리지 않고 `logs-aws.unknown-<env>`에 모은다. 여기에 쌓이면 규칙을 더한다.
 - Neptune 쿼리는 `pipelines/aws-neptune.rb`가 Gremlin 리터럴 값을 지운 뒤에만 남긴다. graph-rag에 새 라벨·키·코드를

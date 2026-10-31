@@ -18,6 +18,9 @@ def register(params)
     # 쿼리의 OAuth code·state, 광고 클릭 ID 값. 이름과 utm_*는 남긴다.
     # 앞이 ?·&인 URL 안의 값, 줄 맨 앞(url.query 필드), "로 시작하는 JSON 문자열(event.original의 "query":"code=...")을 잡는다.
     [/(^|[?&"])(code|state|gclid|gbraid|wbraid)=[^&\s"'#]+/, '\1\2=[redacted]'],
+    # 서명 URL의 서명·자격 증명 값: S3 presigned URL(content MediaStorageService.presignPutObject)의 X-Amz-*,
+    # CloudFront 서명 URL의 Signature. 만료 전까지는 URL만으로 올리고 받을 수 있다. 키 이름과 X-Amz-Expires 등은 남긴다.
+    [/(^|[?&"])(X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|Signature)=[^&\s"'#]+/i, '\1\2=[redacted]'],
     # 세션·동의 쿠키 값 (__Host- 접두어 포함)
     [/((?:__Host-)?ls_(?:session|consent)=)[^;\s"',]+/, '\1[redacted]'],
     # 인증 헤더: 헤더 이름 뒤의 값을 줄 끝까지. JSON으로 찍힌 "authorization": "..."도 잡는다.

@@ -85,6 +85,7 @@ ensure_bucket "$LOGS_BUCKET" loki "${BOOTSTRAP_AWS_DIR}/loki-bucket-lifecycle.js
 ensure_bucket "$ARCHIVE_BUCKET" log-archive "${BOOTSTRAP_AWS_DIR}/log-archive-bucket-lifecycle.json"
 ensure_bucket "$AWS_LOGS_BUCKET" aws-logs "${BOOTSTRAP_AWS_DIR}/aws-logs-bucket-lifecycle.json"
 # 원천 버킷에는 ALB(elasticloadbalancing)와 CloudFront(로그 전달 서비스)가 쓸 수 있게 허용한다.
+# 각자 자기 접두어(alb/, cloudfront/)에만 쓴다. 로그를 켜는 것은 08과 LBC IngressClassParams가 한다.
 sed -e "s|__BUCKET__|${AWS_LOGS_BUCKET}|g" -e "s|__ACCOUNT__|${ACCOUNT}|g" \
   "${BOOTSTRAP_AWS_DIR}/aws-logs-bucket-policy.json" > "${WORK}/aws-logs-bucket-policy.json"
 aws s3api put-bucket-policy --bucket "$AWS_LOGS_BUCKET" --policy "file://${WORK}/aws-logs-bucket-policy.json"
