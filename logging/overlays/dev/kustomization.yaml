@@ -18,7 +18,7 @@ patches:
         path: /spec/config
         value:
           server.publicBaseUrl: https://kibana-dev.loresentry.com
-  # Logstash pipeline이 data stream 이름(logs-<dataset>-dev)과 공통 필드에 쓰는 값.
+  # Logstash pipeline이 data stream 이름(logs-<dataset>-dev)과 공통 필드, S3 보관 위치에 쓰는 값.
   - target:
       kind: Logstash
       name: logstash
@@ -33,3 +33,9 @@ patches:
         value:
           name: CLUSTER_NAME
           value: lore-sentry-dev-k8s
+      # bootstrap/dev/04-storage-iam.sh가 만든 보관 버킷(1년). 이름의 숫자는 AWS 계정 ID다.
+      - op: add
+        path: /spec/podTemplate/spec/containers/0/env/-
+        value:
+          name: ARCHIVE_BUCKET
+          value: loresentry-log-archive-dev-197179613039

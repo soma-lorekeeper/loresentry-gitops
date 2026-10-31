@@ -23,7 +23,7 @@ logging/
 │   ├── logstash/
 │   │   ├── logstash.yaml         Logstash, Service logstash-ls-beats:5044 (wave 2)
 │   │   ├── serviceaccount.yaml   Pod Identity 연결 대상
-│   │   └── pipelines/            app(입력·가공) → to-es(출력) pipeline, 마스킹 mask.rb
+│   │   └── pipelines/            app(입력·가공) → to-es·to-s3(출력) pipeline, 마스킹 mask.rb
 │   └── filebeat/
 │       ├── filebeat.yaml         노드마다 하나, 파드 로그 → Logstash (wave 2)
 │       └── rbac.yaml             파드·namespace·노드 읽기
@@ -38,6 +38,27 @@ ES(0) → template Job(1) → Kibana·Logstash·Filebeat(2) 순서라 첫 data s
 `workload/`처럼 Kustomize base + overlay 구조다. 다만 `workload/` overlay는 환경 이름으로 네임스페이스를 덮어쓰고, 여기는
 모든 리소스가 `monitoring`에 있다. `workload/`는 환경(네임스페이스)마다 한 벌이고, 로깅 스택은 클러스터마다 한 벌이라
 따로 둔다.
+
+## S3 보관
+
+Logstash `to-s3`가 ES에 넣는 것과 같은 가공·마스킹 결과를 보관 버킷에 남긴다. 버킷 lifecycle이 365일 뒤 지운다.
+
+| 항목 | 값 |
+| --- | --- |
+| 버킷 | `loresentry-log-archive-<env>-<계정>` (dev는 `bootstrap/dev/04-storage-iam.sh`가 만든다) |
+| 경로 | `<env>/YYYY/MM/DD/ls.s3.<uuid>.<YYYY-MM-DDTHH.MM>.part<N>.txt.gz` (날짜는 이벤트 `@timestamp`, UTC) |
+| 형식 | 한 줄에 이벤트 JSON 하나, gzip. 길이 상한으로 자르지 않은 전문 |
+| 파일 단위 | 60분 또는 100MB 중 먼저 오는 때 |
+| 권한 | Pod Identity `monitoring/logstash` → 역할은 쓰기만 한다(삭제 없음) |
+
+버킷 맨 위의 `logstash-programmatic-access-test-object-*`는 Logstash가 시작할 때 쓰기 권한을 확인하려고 올리는 파일이다.
+역할에 삭제 권한이 없어 남고, lifecycle이 함께 지운다.
+
+```bash
+# 하루치 내려받아 보기 (예: 에러만)
+aws s3 cp s3://loresentry-log-archive-dev-197179613039/dev/2026/11/01/ ./archive --recursive
+zcat archive/*.gz | jq -c 'select(.log.level == "error") | {t: ."@timestamp", s: .service.name, m: .message}'
+```
 
 ## 누가 읽나
 
