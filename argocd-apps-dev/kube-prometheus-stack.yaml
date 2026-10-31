@@ -163,15 +163,6 @@ spec:
             path: /
             pathType: Prefix
 
-          additionalDataSources:
-            - name: Loki
-              uid: loki
-              type: loki
-              access: proxy
-              url: http://loki.monitoring.svc.cluster.local:3100
-              jsonData:
-                maxLines: 1000
-
           dashboardProviders:
             dashboardproviders.yaml:
               apiVersion: 1

@@ -613,7 +613,7 @@ and every Application there targets `https://kubernetes.default.svc`, so it woul
 be deployed into the prod cluster.
 
 The dev Applications are copies of prod's with only these values changed: cluster
-name and ALB group, hostnames (`*-dev.loresentry.com`), the Loki bucket, the
+name and ALB group, hostnames (`*-dev.loresentry.com`), the
 Strimzi and Telepresence namespace, and Telepresence's subnets. When a prod
 Application changes, change its copy too:
 

@@ -61,6 +61,6 @@ docker run --rm -v "$PWD/loadtest:/s" -w /s grafana/k6:1.0.0 run smoke.js   # k6
 | 클라이언트 지연·실패율 | k6 요약 |
 | ALB 요청 수·지연·5xx | CloudWatch `AWS/ApplicationELB`, 로드밸런서 `k8s-loresentrydev-...` |
 | Pod·노드 CPU·메모리, Kafka | `https://grafana-dev.loresentry.com` |
-| 로그 | Grafana → Loki, `namespace="dev"` |
+| 로그 | Kibana `https://kibana-dev.loresentry.com`, `kubernetes.namespace: dev` |
 
 앱 자체의 HTTP 지표(ServiceMonitor)는 prod에도 아직 없다. 엔드포인트별 서버 지연은 ALB와 k6로 본다.
