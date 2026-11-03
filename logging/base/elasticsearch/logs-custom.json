@@ -81,6 +81,11 @@
             "id": { "type": "keyword" }
           }
         },
+        "url": {
+          "properties": {
+            "full": { "type": "keyword" }
+          }
+        },
         "orchestrator": {
           "properties": {
             "type": { "type": "keyword" }
