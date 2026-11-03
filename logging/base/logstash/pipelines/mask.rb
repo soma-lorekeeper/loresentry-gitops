@@ -1,6 +1,7 @@
 # 금지 항목 마스킹 (LOG_SCHEMA.md 4절 "Logstash 마스킹 규칙").
 #
-# 앱이 실수로 남긴 값을 막는 두 번째 방어선이다. 파싱에 성공했는지와 상관없이 아래 필드 전부에 적용하고,
+# 앱이 실수로 남긴 값을 막는 두 번째 방어선이다(첫 번째는 앱 로그 클래스가 문자열 입력값·결과를 가리는 것).
+# 파싱에 성공했는지와 상관없이 아래 필드 전부와 앱 필드 loresentry 아래의 모든 문자열에 적용하고,
 # ES·S3로 갈라지기 전(app·aws pipeline의 filter)에 부른다. 이름·본문처럼 패턴으로 잡을 수 없는 것은 앱이 찍지 않는 것으로만 막는다.
 # 규칙을 바꾸면 LOG_SCHEMA.md 표도 같은 시점에 고친다.
 
@@ -35,6 +36,13 @@ def register(params)
 end
 
 def filter(event)
+  # 앱 필드 loresentry.*(입력값 param, 결과 result, 도메인 ID 등). 중첩 객체·배열 안의 문자열까지 모두 검사한다.
+  # UUID·코드 값은 규칙에 걸리지 않으므로 그대로 남는다. 바뀐 값이 있을 때만 다시 넣는다.
+  app = event.get("[loresentry]")
+  if app.is_a?(Hash)
+    masked = mask_tree(app)
+    event.set("[loresentry]", masked) unless masked == app
+  end
   @fields.each do |field|
     value = event.get(field)
     # 같은 필드에 값이 여러 번 들어가면 배열이 된다. 배열 안의 문자열도 빠짐없이 지운다.
@@ -48,6 +56,16 @@ def filter(event)
     event.set(field, masked) unless masked == value
   end
   [event]
+end
+
+# 해시·배열을 따라 내려가며 문자열만 mask한다. 원래 객체는 바꾸지 않고 새 객체를 돌려준다.
+def mask_tree(value)
+  case value
+  when String then mask(value)
+  when Hash then value.each_with_object({}) { |(key, item), out| out[key] = mask_tree(item) }
+  when Array then value.map { |item| mask_tree(item) }
+  else value
+  end
 end
 
 def mask(text)
