@@ -35,6 +35,7 @@
         }
       ],
       "properties": {
+        "@timestamp": { "type": "date_nanos" },
         "log": {
           "properties": {
             "logger": { "type": "keyword" },
