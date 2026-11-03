@@ -1,0 +1,15 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: openai-mock
+  labels:
+    app.kubernetes.io/name: openai-mock
+    app.kubernetes.io/part-of: lore-sentry
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openai-mock
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

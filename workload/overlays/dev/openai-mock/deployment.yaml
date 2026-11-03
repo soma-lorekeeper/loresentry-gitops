@@ -27,14 +27,14 @@ spec:
               value: "1"
             - name: PYTHONUNBUFFERED
               value: "1"
-            - name: MOCK_TOOL_DELAY_MS
-              value: "1500-4000"
-            - name: MOCK_TEXT_DELAY_MS
-              value: "3000-8000"
-            - name: MOCK_JUDGE_DELAY_MS
-              value: "800-2000"
-            - name: MOCK_ANSWER_CHARS
-              value: "1200"
+            - name: MOCK_TPM
+              value: "0"
+            - name: MOCK_RPM
+              value: "0"
+            - name: MOCK_TPM_CHARGE
+              value: max
+            - name: MOCK_LATENCY_SCALE
+              value: "1"
           ports:
             - name: http
               containerPort: 8000
@@ -54,7 +54,7 @@ spec:
               cpu: 50m
               memory: 64Mi
             limits:
-              cpu: 500m
+              cpu: "1"
               memory: 256Mi
           securityContext:
             runAsNonRoot: true
