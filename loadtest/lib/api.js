@@ -73,7 +73,7 @@ export function ok(res, label, missingOk = false) {
 export function projectId(client) {
   const res = client.get("/projects", "projects");
   ok(res, "projects");
-  if (res.status !== 200) return null;
+  if (res.status !== 200) return undefined;
   const project = (res.json("projects") || []).find((p) => p.name === PROJECT_NAME);
   return project ? project.id : null;
 }
@@ -83,6 +83,7 @@ export class Workspace {
     this.client = client;
     this.project = project;
     this.documents = [];
+    this.listed = false;
     this.chat = false;
     this.listedAt = 0;
     this.doc = null;
@@ -126,6 +127,7 @@ export class Workspace {
     rest.forEach((res, i) => ok(res, requests[i + 1][1], requests[i + 1][2] === OK_OR_MISSING));
     if (files.status === 200) {
       this.documents = (files.json("documents") || []).filter((d) => d.folder_code === "MANUSCRIPT" && !d.trashed_at);
+      this.listed = true;
     }
     this.listedAt = Date.now();
   }

@@ -40,17 +40,25 @@ function workspace() {
   const client = new Client(sessions[exec.vu.idInTest - 1]);
   ok(client.get("/auth/users/me", "me"), "me");
   const project = projectId(client);
-  if (!project) exec.test.abort(`user ${exec.vu.idInTest} has no project named loadtest; run seed-content.js`);
+  if (project === null) exec.test.abort(`user ${exec.vu.idInTest} has no project named loadtest; run seed-content.js`);
+  if (!project) return retryLater();
   const ws = new Workspace(client, project);
   ws.enter();
+  if (!ws.listed) return retryLater();
   if (!ws.documents.length) exec.test.abort(`user ${exec.vu.idInTest} has no manuscripts; run seed-content.js`);
   ws.open(pick(ws.documents).id, true);
   current = ws;
   return ws;
 }
 
+function retryLater() {
+  sleep(5);
+  return null;
+}
+
 export function writer() {
   const ws = workspace();
+  if (!ws) return;
   if (!ws.doc || Math.random() < SWITCH_CHANCE) ws.open(pick(ws.documents).id);
   if (!ws.doc) {
     sleep(between(REST_SECONDS));
@@ -62,6 +70,7 @@ export function writer() {
 
 export function reader() {
   const ws = workspace();
+  if (!ws) return;
   const roll = Math.random();
   if (roll < 0.7) {
     ws.open(pick(ws.documents).id);
