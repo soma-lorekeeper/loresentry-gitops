@@ -99,6 +99,40 @@ patches:
                   - name: SPRING_PROFILES_ACTIVE
                     value: dev
   - target:
+      kind: Deployment
+      name: content-api
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: db-pool
+      spec:
+        template:
+          spec:
+            containers:
+              - name: api
+                env:
+                  - name: SPRING_DATASOURCE_HIKARI_MAXIMUMPOOLSIZE
+                    value: "10"
+  - target:
+      kind: Deployment
+      name: gateway-api
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: http-pool
+      spec:
+        template:
+          spec:
+            containers:
+              - name: api
+                env:
+                  - name: LORESENTRY_HTTP_MAX_CONNECTIONS
+                    value: "50"
+                  - name: LORESENTRY_HTTP_MAX_CONNECTIONS_PER_ROUTE
+                    value: "10"
+  - target:
       kind: ConfigMap
       name: manuscript-key
     patch: |-
