@@ -11,7 +11,7 @@ export function summarize(data, extra = {}) {
     phases[name] = {
       seconds: span,
       requests: metric.values.count,
-      tps: span ? round(metric.values.count / span) : null,
+      rps: span ? round(metric.values.count / span) : null,
       read_p95_ms: value(data, `http_req_duration{slo:read,phase:${name}}`, "p(95)"),
       read_p99_ms: value(data, `http_req_duration{slo:read,phase:${name}}`, "p(99)"),
       save_p95_ms: value(data, `http_req_duration{slo:save,phase:${name}}`, "p(95)"),

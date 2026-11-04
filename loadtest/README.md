@@ -95,7 +95,7 @@ jar에 넣는다. 헤더까지 넣으면 같은 쿠키가 두 번 실려 BFF가 
 SLO: 읽기(문서 열기·파일 트리) p95 < 300ms, 저장 p95 < 500ms, 실패율 < 0.1%. 요청마다 `phase` 태그(구간 이름)와
 `slo` 태그(`read`·`save`·`other`)가 붙고, threshold는 판정 구간만 본다.
 
-결과는 `results/<프로파일>-<시각>.json`에 구간별 요청 수·TPS·p95·p99·실패율·threshold 판정으로 남는다.
+결과는 `results/<프로파일>-<시각>.json`에 구간별 요청 수·RPS·p95·p99·실패율·threshold 판정으로 남는다.
 
 ## 5. 부하 발생기와 대시보드 (`loadgen.sh`)
 
