@@ -56,6 +56,9 @@ spec:
               valueFrom:
                 resourceFieldRef:
                   resource: limits.cpu
+                  # 1코어 단위로 올림(500m → 1). 비워 두면 API server가 "0"으로 채워 Argo CD가 Git과 다르다고 보고
+                  # selfHeal이 몇 분마다 다시 동기화한다. 그래서 기본값과 같은 뜻의 1을 적어 둔다.
+                  divisor: "1"
           ports:
             - name: otlp-grpc
               containerPort: 4317
