@@ -22,12 +22,15 @@ export function summarize(data, extra = {}) {
   const thresholds = {};
   for (const [key, metric] of Object.entries(data.metrics)) {
     for (const [expr, result] of Object.entries(metric.thresholds || {})) {
-      if (!RECORD_ONLY.includes(expr)) thresholds[`${key} ${expr}`] = result.ok;
+      if (RECORD_ONLY.includes(expr)) continue;
+      const judged = /phase:([^,}]+)/.exec(key);
+      const measured = !judged || (phases[judged[1]] && phases[judged[1]].requests > 0);
+      thresholds[`${key} ${expr}`] = result.ok && measured;
     }
   }
   const record = {
     profile: PROFILE_NAME,
-    mix: { idle: MIX[0], writer: MIX[1], reader: MIX[2] },
+    mix: { writer: MIX[0], reader: MIX[1] },
     finished_at: new Date().toISOString(),
     passed: Object.values(thresholds).every(Boolean),
     thresholds,

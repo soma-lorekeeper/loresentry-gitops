@@ -1,6 +1,6 @@
 import exec from "k6/execution";
 
-export const MIX = parseMix(__ENV.MIX || "0.3,0.6,0.1");
+export const MIX = parseMix(__ENV.MIX || "0.9,0.1");
 
 const SLO = {
   read: "p(95)<300",
@@ -78,7 +78,7 @@ export function phaseSeconds(name) {
 }
 
 export function scenarios(execs) {
-  const shares = { idle: MIX[0], writer: MIX[1], reader: MIX[2] };
+  const shares = { writer: MIX[0], reader: MIX[1] };
   const result = {};
   for (const [name, fn] of Object.entries(execs)) {
     const stages = PROFILE.stages.map(([duration, users]) => ({
@@ -131,8 +131,8 @@ function breakpointStages(start, step, max) {
 function parseMix(text) {
   const parts = text.split(",").map(Number);
   const total = parts.reduce((a, b) => a + b, 0);
-  if (parts.length !== 3 || parts.some((p) => !(p >= 0)) || Math.abs(total - 1) > 1e-6) {
-    throw new Error(`MIX must be three shares (idle,writer,reader) that sum to 1, got ${text}`);
+  if (parts.length !== 2 || parts.some((p) => !(p >= 0)) || Math.abs(total - 1) > 1e-6) {
+    throw new Error(`MIX must be two shares (writer,reader) that sum to 1, got ${text}`);
   }
   return parts;
 }

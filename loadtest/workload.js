@@ -5,19 +5,18 @@ import { BASE_URL, Client, Workspace, ok, projectId, prose, sessions } from "./l
 import { scenarios, thresholds } from "./lib/profiles.js";
 import { summarize } from "./lib/summary.js";
 
-const TYPE_SECONDS = range(__ENV.TYPE_SECONDS || "30-90");
-const REST_SECONDS = range(__ENV.REST_SECONDS || "30-90");
+const TYPE_SECONDS = range(__ENV.TYPE_SECONDS || "10");
+const REST_SECONDS = range(__ENV.REST_SECONDS || "3");
 const READ_SECONDS = range(__ENV.READ_SECONDS || "20-60");
 const CHANGE_INTERVAL = Number(__ENV.CHANGE_INTERVAL || 0.25);
 const CHARS_PER_SECOND = Number(__ENV.CHARS_PER_SECOND || 2);
-const SWITCH_CHANCE = Number(__ENV.SWITCH_CHANCE || 0.2);
+const SWITCH_CHANCE = Number(__ENV.SWITCH_CHANCE || 0.02);
 const SAVE_IDLE = 0.8;
 const SAVE_MAX_WAIT = 5;
-const USAGE_POLL = 600;
 const SEARCH_TERMS = ["레나", "카엘", "성당", "항구", "기사단", "등대"];
 
 export const options = {
-  scenarios: scenarios({ idle: "idle", writer: "writer", reader: "reader" }),
+  scenarios: scenarios({ writer: "writer", reader: "reader" }),
   thresholds: thresholds(),
   summaryTrendStats: ["avg", "med", "p(90)", "p(95)", "p(99)", "max"],
   hosts: __ENV.TARGET_IP ? { [BASE_URL.replace(/^https?:\/\//, "").split("/")[0]]: __ENV.TARGET_IP } : {},
@@ -50,12 +49,6 @@ function workspace() {
   return ws;
 }
 
-export function idle() {
-  const ws = workspace();
-  sleep(USAGE_POLL);
-  if (ws.chat) ok(ws.client.get("/chat/usage", "chat_usage"), "chat_usage");
-}
-
 export function writer() {
   const ws = workspace();
   if (!ws.doc || Math.random() < SWITCH_CHANCE) ws.open(pick(ws.documents).id);
@@ -63,8 +56,8 @@ export function writer() {
     sleep(between(REST_SECONDS));
     return;
   }
-  typeFor(ws, between(TYPE_SECONDS));
-  sleep(between(REST_SECONDS));
+  const settled = typeFor(ws, between(TYPE_SECONDS));
+  sleep(Math.max(0, between(REST_SECONDS) - settled));
 }
 
 export function reader() {
@@ -85,14 +78,17 @@ export function reader() {
 
 function typeFor(ws, seconds) {
   let left = seconds;
-  while (left > 0) {
-    const typing = Math.min(SAVE_MAX_WAIT, left);
+  for (;;) {
+    const typing = Math.max(0, Math.min(SAVE_MAX_WAIT, left));
     sleep(typing);
     left -= typing;
     type(ws.doc, typing);
-    if (left <= 0) sleep(SAVE_IDLE);
+    if (left <= 0) {
+      sleep(SAVE_IDLE);
+      return SAVE_IDLE + ws.save().timings.duration / 1000;
+    }
     let took = ws.save().timings.duration / 1000;
-    while (left > 0 && Math.random() < took / CHANGE_INTERVAL) {
+    while (left > took && Math.random() < took / CHANGE_INTERVAL) {
       left -= took;
       type(ws.doc, took);
       took = ws.save().timings.duration / 1000;
