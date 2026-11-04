@@ -1,0 +1,30 @@
+# Grafana 경보를 Grafana 내장 Alertmanager가 아니라 kps Alertmanager로 넘긴다(출구는 하나, docs ALERTING.md §1).
+# Grafana sidecar가 label grafana_alert: "1"인 ConfigMap을 /etc/grafana/provisioning/alerting에 넣고 다시 읽는다.
+# provisioning이라 Grafana DB가 emptyDir이어도 재시작 때 다시 들어가며, Grafana 화면에서는 읽기 전용이다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-alerting-notifications
+  labels:
+    grafana_alert: "1"
+data:
+  notifications.yaml: |
+    apiVersion: 1
+    contactPoints:
+      - orgId: 1
+        name: kps-alertmanager
+        receivers:
+          # Alertmanager API(/api/v2/alerts)로 경보를 그대로 넘긴다. 해소도 넘긴다
+          - uid: kps-alertmanager
+            type: prometheus-alertmanager
+            settings:
+              url: http://kps-alertmanager.monitoring:9093
+    policies:
+      # 모든 Grafana 경보를 kps로 보낸다. 묶기·반복·Slack 전송은 kps가 하므로 여기서는 묶지 않고('...') 바로 보낸다.
+      # Grafana는 경보 끝 시각을 약 4분 뒤로 찍으므로, firing 동안 1분마다 다시 보내야 kps가 해소로 오해하지 않는다
+      - orgId: 1
+        receiver: kps-alertmanager
+        group_by: ["..."]
+        group_wait: 0s
+        group_interval: 1m
+        repeat_interval: 1m
