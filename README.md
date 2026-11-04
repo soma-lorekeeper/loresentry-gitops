@@ -350,8 +350,17 @@ lifecycle expires objects after 45 days as a backstop behind the compactor's 30.
   ```
 
 - The Cloudflare record `grafana CNAME <ALB DNS name>`, proxy off.
-- Alertmanager has no receiver yet, so alerts are visible in Grafana and
-  Alertmanager only.
+- Alerting (rules, routing, Slack message format) follows `docs/ALERTING.md`.
+  In dev, Alertmanager sends critical and warning alerts to Slack `#alerts-dev`
+  through a bot token in the `alertmanager-slack` Secret (`bot-token`) in
+  `monitoring`. Alertmanager mounts it, so it does not start without it.
+  Prod Alertmanager has no receiver yet; it gets one when the prod environment
+  is set up.
+
+  ```bash
+  kubectl -n monitoring create secret generic alertmanager-slack \
+    --from-literal=bot-token="$(pbpaste)"   # Bot User OAuth Token (xoxb-...)
+  ```
 
 ## Messaging — Kafka
 
