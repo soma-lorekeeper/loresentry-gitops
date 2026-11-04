@@ -89,7 +89,7 @@ patches:
   # service.version은 이미지의 시작 스크립트가 APP_VERSION으로 앞에 붙인다
   - target:
       kind: Deployment
-      name: (authentication-api|content-api)
+      name: (gateway-api|authentication-api|content-api)
     patch: |-
       - op: add
         path: /spec/template/spec/containers/0/env/-
@@ -125,26 +125,6 @@ patches:
         value:
           name: OTEL_RESOURCE_ATTRIBUTES
           value: deployment.environment.name=dev,k8s.namespace.name=$(POD_NAMESPACE),k8s.pod.name=$(POD_NAME),service.instance.id=$(POD_NAME)
-  # 아직 옮기지 않은 Java 서비스: Boot의 OTLP exporter를 켜고 주소를 준다(Micrometer Tracing)
-  - target:
-      kind: Deployment
-      name: (gateway-api)
-    patch: |-
-      - op: add
-        path: /spec/template/spec/containers/0/env/-
-        value:
-          name: MANAGEMENT_TRACING_EXPORT_OTLP_ENABLED
-          value: "true"
-      - op: add
-        path: /spec/template/spec/containers/0/env/-
-        value:
-          name: MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT
-          value: http://edot-collector.monitoring.svc:4318/v1/traces
-      - op: add
-        path: /spec/template/spec/containers/0/env/-
-        value:
-          name: OTEL_RESOURCE_ATTRIBUTES
-          value: deployment.environment.name=dev
   # Python은 이 주소가 있을 때만 setup_tracing이 OTLP exporter를 붙인다(/v1/traces는 exporter가 붙인다)
   - target:
       kind: Deployment

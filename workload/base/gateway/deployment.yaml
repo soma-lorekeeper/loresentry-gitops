@@ -51,6 +51,15 @@ spec:
           ports:
             - name: http
               containerPort: 8000
+          # 기동이 끝날 때까지 readiness·liveness를 미룬다. EDOT Java agent가 기동 중 클래스에 계측을 붙여 기동이 늘어난다(auth는 dev에서
+          # 45초 → 63초, CPU 요청 100m). liveness(20초 뒤부터 20초마다, 3번 실패하면 재시작)만으로는 기동 중에 재시작될 수 있다. 5초마다 보고
+          # 36번(3분)까지 기다린다
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
           readinessProbe:
             httpGet:
               path: /health
@@ -69,7 +78,9 @@ spec:
               memory: 128Mi
             limits:
               cpu: 500m
-              memory: 512Mi
+              # EDOT Java agent(계측 클래스, span 버퍼)가 메모리를 더 쓴다(auth 로컬 실측 약 50MiB). dev의 gateway는 agent 전에도 312~323Mi로
+              # 512Mi의 75%(heap 상한)에 가까웠다. heap 상한은 이미지 시작 스크립트가 이 값의 75%로 정한다
+              memory: 768Mi
           volumeMounts:
             - name: jwt-public
               mountPath: /app/keys
