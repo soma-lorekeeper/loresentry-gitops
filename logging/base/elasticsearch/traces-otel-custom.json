@@ -1,0 +1,19 @@
+{
+  "_meta": {
+    "description": "loresentry additions to the built-in traces-*.otel-* templates (EDOT Collector data). Rules: docs repository LOG_SCHEMA.md, logging/README.md",
+    "managed_by": "loresentry-gitops"
+  },
+  "template": {
+    "settings": {
+      "index": {
+        "number_of_replicas": "0",
+        "lifecycle": {
+          "prefer_ilm": false
+        }
+      }
+    },
+    "lifecycle": {
+      "data_retention": "30d"
+    }
+  }
+}

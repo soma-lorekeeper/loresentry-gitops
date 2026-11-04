@@ -1,0 +1,107 @@
+# EDOT Collector gateway 설정. 서비스 6개가 OTLP로 보낸 span을 받아 민감한 값을 지우고 ES에 쓴다.
+# 흐름: otlp 수신 → memory_limiter → transform/privacy(지우기·가리기) → batch → elasticapm(APM 필드 보강) → ES
+#       elasticapm connector가 span으로 서비스·트랜잭션 집계 지표를 만들어 같은 ES에 쓴다(Kibana APM 화면이 읽는다).
+# 규칙은 docs 저장소 LOG_SCHEMA.md 4절 "trace 마스킹"과 같다. 바꾸면 그 문서도 같은 시점에 고친다.
+# 이 파일 안에서 `$`는 환경 변수 치환 표시라, 정규식 치환의 `${1}`은 `$${1}`로 적는다.
+
+extensions:
+  # Kubernetes readiness·liveness probe가 부르는 주소.
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  # 앱은 OTLP로 span만 보낸다(logs는 Filebeat → Logstash, 지표는 Prometheus가 따로 모은다).
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+connectors:
+  # span에서 Kibana APM용 집계 지표(서비스·트랜잭션·호출 대상, 1분·10분·60분)를 만든다.
+  elasticapm: {}
+
+processors:
+  # 메모리가 한도(컨테이너 한도의 80%)에 가까워지면 받기를 잠시 거절해 OOM으로 죽지 않게 한다.
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+
+  # 민감한 값 처리. 로그와 같은 원칙: 쿼리스트링(검색어 등), 예외 메시지, SQL은 아예 남기지 않는다.
+  # 지운 뒤 남은 모든 문자열 속성에 Logstash mask.rb와 같은 정규식을 한 번 더 건다(두 번째 방어선).
+  # 정규식은 Go RE2라 lookahead가 없다. 그래서 이메일 규칙은 클러스터 안 주소(…@….svc)도 가리고,
+  # DB 키 값 규칙은 괄호 안을 통째로 가린다. 속성이 없으면 각 문장은 아무것도 하지 않는다.
+  transform/privacy:
+    error_mode: ignore
+    trace_statements:
+      # span 속성. context를 나눠 적는다(섞으면 spanevent로 추론되어 event 없는 span이 처리되지 않는다).
+      - context: span
+        statements:
+          # URL은 쿼리를 뗀 경로까지만 남긴다. 새 semconv(url.*)와 옛 semconv(http.*)를 모두 덮는다.
+          - 'replace_pattern(span.attributes["url.full"], "\\?.*", "")'
+          - 'replace_pattern(span.attributes["url.original"], "\\?.*", "")'
+          - 'replace_pattern(span.attributes["http.url"], "\\?.*", "")'
+          - 'replace_pattern(span.attributes["http.target"], "\\?.*", "")'
+          - 'delete_key(span.attributes, "url.query")'
+          # SQL 문. 값이 바인딩되어 있어도 로그 규약상 SQL은 남기지 않는다(느린 쿼리는 RDS 로그로 본다).
+          - 'delete_key(span.attributes, "db.statement")'
+          - 'delete_key(span.attributes, "db.query.text")'
+          # 남은 문자열 속성 전체에 정규식 가리기.
+          - 'replace_all_patterns(span.attributes, "value", "[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*\\.[A-Za-z]{2,}", "[email]")'
+          - 'replace_all_patterns(span.attributes, "value", "(^|[?&\"])(code|state|gclid|gbraid|wbraid)=[^&\\s\"''#]+", "$${1}$${2}=[redacted]")'
+          - 'replace_all_patterns(span.attributes, "value", "(?i)(^|[?&\"])(X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|Signature)=[^&\\s\"''#]+", "$${1}$${2}=[redacted]")'
+          - 'replace_all_patterns(span.attributes, "value", "((?:__Host-)?ls_(?:session|consent)=)[^;\\s\"'',]+", "$${1}[redacted]")'
+          - 'replace_all_patterns(span.attributes, "value", "(?i)\\b((?:set-)?cookie|authorization)([\"'']?\\s*:\\s*)[^\\r\\n]+", "$${1}$${2}[redacted]")'
+          - 'replace_all_patterns(span.attributes, "value", "eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]*", "[jwt]")'
+          - 'replace_all_patterns(span.attributes, "value", "(?i)(PASSWORD\\s+)''(?:[^'']|'''')*''", "$${1}''[redacted]''")'
+          - 'replace_all_patterns(span.attributes, "value", "(Key \\([^)]*\\)=\\()[^)]*(\\))", "$${1}[redacted]$${2}")'
+      # span event 속성. 예외 event는 ES에서 logs-*.otel-* 문서(APM 오류)가 된다.
+      # 메시지와 스택(Caused by 줄에 메시지가 있다)은 지우고 exception.type만 남긴다. 스택은 trace.id로 앱 로그에서 본다.
+      - context: spanevent
+        statements:
+          - 'delete_key(spanevent.attributes, "exception.message")'
+          - 'delete_key(spanevent.attributes, "exception.stacktrace")'
+          - 'replace_all_patterns(spanevent.attributes, "value", "[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*\\.[A-Za-z]{2,}", "[email]")'
+          - 'replace_all_patterns(spanevent.attributes, "value", "(^|[?&\"])(code|state|gclid|gbraid|wbraid)=[^&\\s\"''#]+", "$${1}$${2}=[redacted]")'
+          - 'replace_all_patterns(spanevent.attributes, "value", "(?i)(^|[?&\"])(X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|Signature)=[^&\\s\"''#]+", "$${1}$${2}=[redacted]")'
+          - 'replace_all_patterns(spanevent.attributes, "value", "((?:__Host-)?ls_(?:session|consent)=)[^;\\s\"'',]+", "$${1}[redacted]")'
+          - 'replace_all_patterns(spanevent.attributes, "value", "(?i)\\b((?:set-)?cookie|authorization)([\"'']?\\s*:\\s*)[^\\r\\n]+", "$${1}$${2}[redacted]")'
+          - 'replace_all_patterns(spanevent.attributes, "value", "eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]*", "[jwt]")'
+          - 'replace_all_patterns(spanevent.attributes, "value", "(?i)(PASSWORD\\s+)''(?:[^'']|'''')*''", "$${1}''[redacted]''")'
+          - 'replace_all_patterns(spanevent.attributes, "value", "(Key \\([^)]*\\)=\\()[^)]*(\\))", "$${1}[redacted]$${2}")'
+
+  # ES에 묶어 보낸다(Elastic 공식 gateway 예시 값).
+  batch:
+    send_batch_size: 1000
+    send_batch_max_size: 1500
+    timeout: 1s
+
+  # span에 Kibana APM이 쓰는 필드(transaction·span 구분, 이름 등)를 더한다. 집계 connector보다 앞에 있어야 한다.
+  elasticapm: {}
+
+exporters:
+  elasticsearch/otel:
+    endpoints: ["https://logs-es-http.monitoring.svc:9200"]
+    # bootstrap/dev/09-apm-key.sh가 만든 쓰기 전용 API key(Secret edot-collector-es). 권한은 *.otel-* data stream 쓰기만.
+    api_key: ${env:ELASTIC_API_KEY}
+    tls:
+      # ECK가 만든 ES HTTPS 인증서의 CA(Secret logs-es-http-certs-public).
+      ca_file: /etc/es-ca/ca.crt
+    # OTel 원래 모양 그대로 traces-*.otel-*, metrics-*.otel-*, logs-*.otel-*에 쓴다(Kibana APM이 읽는 모양).
+    mapping:
+      mode: otel
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/privacy, batch, elasticapm]
+      exporters: [elasticapm, elasticsearch/otel]
+    # connector가 만든 집계 지표. 이미 계산된 값이라 다른 processor를 거치지 않는다.
+    metrics/aggregated-otel-metrics:
+      receivers: [elasticapm]
+      processors: []
+      exporters: [elasticsearch/otel]
