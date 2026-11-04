@@ -98,18 +98,18 @@ Logstash를 거치지 않으므로 민감한 값은 collector가 처리한다(`o
 | 항목 | 값 |
 | --- | --- |
 | 받는 주소 | `edot-collector.monitoring.svc:4317`(gRPC), `:4318`(HTTP). 앱 쪽 전송 설정은 workload overlay에서 켠다(dev: Java는 `MANAGEMENT_TRACING_EXPORT_OTLP_ENABLED`·`MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT`, Python은 `OTEL_EXPORTER_OTLP_ENDPOINT`, 공통 `OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=dev`) |
-| 버리는 trace | 앱이 할 일 없던 폴링 회차의 span에 `loresentry.polling.idle=true`를 단다. `tail_sampling`의 `drop` 정책이 그 trace를 자식 span(DB 조회)까지 통째로 버리고, 나머지 trace는 모두 남긴다. 판단을 위해 trace를 5초 모았다가 내보낸다 |
+| 버리는 trace | `tail_sampling`의 `drop` 정책이 두 가지 trace를 자식 span까지 통째로 버리고, 나머지 trace는 모두 남긴다. 판단을 위해 trace를 5초 모았다가 내보낸다. (1) 빈 폴링 회차: 앱이 할 일 없던 회차의 span에 `loresentry.polling.idle=true`를 단다. (2) 성공한 헬스체크: root span이 `/health`·`/health/**` 요청이고 응답이 400 미만이다. 속성 이름이 세 가지(OpenTelemetry 안정 이름 `url.path`·`http.response.status_code`, Python 옛 이름 `http.target`·`http.status_code`, Micrometer `uri`·`status`)라 조건도 세 줄이다. 실패한 헬스체크는 남는다 |
 | 쓰는 곳 | `traces-*.otel-*`(span), `logs-*.otel-*`(예외 event = APM 오류), `metrics-*.otel-*`(connector가 만든 서비스·트랜잭션 집계, 1m·10m·60m) |
 | 보존·레플리카 | 30일, 0. traces·metrics는 `*-otel-custom.json`, logs는 `logs-custom.json`이 정한다. 내장 ILM 정책은 삭제 단계가 없어 `prefer_ilm: false`로 data stream lifecycle을 쓴다 |
 | ES 계정 | API key(이름 `edot-collector`), Secret `edot-collector-es`. `*.otel-*` data stream 만들기·쓰기(`auto_configure`, `create_doc`)만 되고 읽기와 앱 로그 쓰기는 안 된다. dev는 `bootstrap/dev/09-apm-key.sh`가 만든다 |
-| 지우는 값 | URL 쿼리(`url.full`·`url.original`·`http.url`·`http.target`의 `?` 뒤, `url.query`), SQL(`db.statement`·`db.query.text`), 예외 메시지·스택(`exception.message`·`exception.stacktrace`) |
+| 지우는 값 | URL 쿼리(`url.full`·`url.original`·`http.url`·`http.target`의 `?` 뒤, `url.query`), SQL과 Redis 명령(`db.statement`·`db.query.text`), 예외 메시지·스택(`exception.message`·`exception.stacktrace`), S3 객체 키(AWS SDK span(`rpc.system: aws-api`)과 S3 주소를 직접 부른 HTTP span의 `url.full`·`url.path`·`http.url`·`http.target`, 모든 span의 `aws.s3.key`·`aws.s3.copy_source`), GenAI 대화 내용(`gen_ai.prompt`·`gen_ai.completion`과 번호 붙은 키, `gen_ai.input.messages`·`gen_ai.output.messages`·`gen_ai.system_instructions`·`gen_ai.tool.call.arguments`·`gen_ai.tool.call.result`, 이름이 `gen_ai.`로 시작하는 span event는 `filter/genai-content`가 뗀다) |
 | 가리는 값 | 남은 모든 span·event 문자열 속성에 `mask.rb`와 같은 규칙(이메일, OAuth `code`·`state`, 광고 클릭 ID, 서명 URL, 세션 쿠키, 인증 헤더, JWT, `PASSWORD '…'`, `Key (…)=(…)`) |
 | 자원 | 요청 100m·256Mi, 한도 500m·512Mi. span 전송을 켠 뒤 실측해 맞춘다 |
 
 - collector 정규식은 Go RE2라 lookahead가 없다. 이메일 규칙은 `mask.rb`와 달리 클러스터 안 주소(`0@…svc`)도 `[email]`로 가리고,
   `Key (…)=(…)`는 괄호 안을 통째로 가린다.
 - Basic 라이선스에서 서비스 목록·트랜잭션·trace 폭포 그림·오류는 보인다. service map, 이상 탐지, correlations는 Platinum이다.
-- 예외의 스택은 span에 남기지 않는다. 같은 `trace.id`의 앱 로그 `error.stack_trace`(메시지 없는 스택)로 본다.
+- 예외의 스택은 span에 남기지 않는다. 같은 `span.id`의 앱 로그 `error.stack_trace`(메시지 없는 스택)로 본다.
 - 설정을 바꾼 뒤에는 로컬에서 ES 9.5.5(보안 켬)와 이 이미지로 시험 span을 보내 ES 문서를 확인한다. 이 파일의 `$`는 환경 변수
   치환 표시라 정규식 치환의 `${1}`은 `$${1}`로 적는다.
 
