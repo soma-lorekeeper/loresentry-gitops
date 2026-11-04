@@ -6,3 +6,5 @@ kind: Kustomization
 resources:
   # Prometheus 규칙(Prometheus Operator가 클러스터의 모든 PrometheusRule을 읽는다)
   - prometheus/infra.yaml
+  # Grafana 경보 provisioning(Grafana sidecar가 label grafana_alert인 ConfigMap을 읽는다)
+  - grafana/notifications.yaml
