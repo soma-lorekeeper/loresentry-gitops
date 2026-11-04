@@ -8,3 +8,5 @@ resources:
   - prometheus/infra.yaml
   # Grafana 경보 provisioning(Grafana sidecar가 label grafana_alert인 ConfigMap을 읽는다)
   - grafana/notifications.yaml
+  # Grafana 로그 경보 규칙 12개(docs ALERTING.md §6.4)
+  - grafana/log-rules.yaml
