@@ -7,3 +7,10 @@ nameReference:
       - kind: Logstash
         group: logstash.k8s.elastic.co
         path: spec/podTemplate/spec/volumes/configMap/name
+  # secretGenerator가 만든 ES 역할 Secret(logs-es-roles-<해시>)을 Elasticsearch CR이 찾을 수 있게 한다
+  - kind: Secret
+    version: v1
+    fieldSpecs:
+      - kind: Elasticsearch
+        group: elasticsearch.k8s.elastic.co
+        path: spec/auth/roles/secretName
