@@ -76,7 +76,7 @@ for entry in "${ADDONS[@]}"; do
 done
 
 echo "== 4. logging node group ${LOGGING_NODEGROUP}"
-# 로깅 스택(ES·Kibana·Logstash) 전용 노드 1대. 기존 pool과 AMI·버전·디스크·역할이 같다.
+# 로깅 스택(ES·Kibana·Logstash·EDOT Collector) 전용 노드 1대. 기존 pool과 AMI·버전·디스크·역할이 같고, 인스턴스는 더 크다(LOGGING_INSTANCE_TYPE).
 # 2b 서브넷 하나에만 둔다: ES·Logstash의 EBS 디스크가 2b에 묶여서, 노드가 교체돼도 같은 AZ에 떠야 디스크가 붙는다.
 # taint는 다른 파드를 막고, label은 로깅 파드가 nodeSelector로 이 노드를 찾게 한다.
 if ! aws eks describe-nodegroup --cluster-name "$CLUSTER" --nodegroup-name "$LOGGING_NODEGROUP" >/dev/null 2>&1; then
@@ -87,7 +87,7 @@ if ! aws eks describe-nodegroup --cluster-name "$CLUSTER" --nodegroup-name "$LOG
     --release-version "$NODE_RELEASE_VERSION" \
     --ami-type "$NODE_AMI_TYPE" \
     --capacity-type ON_DEMAND \
-    --instance-types "$NODE_INSTANCE_TYPE" \
+    --instance-types "$LOGGING_INSTANCE_TYPE" \
     --disk-size "$NODE_DISK_SIZE" \
     --scaling-config minSize=1,maxSize=1,desiredSize=1 \
     --update-config maxUnavailable=1 \

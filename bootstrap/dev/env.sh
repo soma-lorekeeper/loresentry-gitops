@@ -93,7 +93,10 @@ GRAPH_RAG_REFRESH_POLICY=lore-sentry-dev-graph-rag-refresh-policy
 LOGGING_NAMESPACE=monitoring
 # 로깅 전용 노드 1대. ES·Logstash 디스크(EBS)는 AZ에 묶이므로 2b 서브넷 하나에만 띄운다.
 # 그래야 노드가 교체돼도 같은 AZ에 다시 떠서 디스크가 그대로 붙는다.
-LOGGING_NODEGROUP=lore-sentry-dev-logging-pool
+# 2026-11-04 r7i.large(vCPU 2)에서 부하 테스트 때 CPU 100%·Logstash OOMKilled가 나서 r7i.xlarge(vCPU 4·32GiB)로 바꿨다.
+# 관리형 노드 그룹은 인스턴스 타입과 이름을 바꿀 수 없어 새 노드 그룹(-v2)으로 교체했다.
+LOGGING_NODEGROUP=lore-sentry-dev-logging-pool-v2
+LOGGING_INSTANCE_TYPE=r7i.xlarge
 LOGGING_SUBNET=lore-sentry-dev-private-b
 LOGGING_NODE_LABEL=role=logging                                   # 로깅 파드가 이 노드를 찾아오게
 LOGGING_NODE_TAINT=key=dedicated,value=logging,effect=NO_SCHEDULE   # 다른 파드는 못 오게

@@ -330,6 +330,21 @@ spec:
               secureJsonData:
                 basicAuthPassword: $ES_GRAFANA_PASSWORD
                 tlsCACert: $__file{/etc/grafana/es-ca/ca.crt}
+            # 로그 스택 자신의 상태(Stack Monitoring). ECK Metricbeat sidecar가 쓰는 .monitoring-*를 로그 스택 경보가 읽는다
+            - name: Elasticsearch stack monitoring
+              uid: es-monitoring
+              type: elasticsearch
+              access: proxy
+              url: https://logs-es-http.monitoring.svc:9200
+              basicAuth: true
+              basicAuthUser: grafana
+              jsonData:
+                index: ".monitoring-*"
+                timeField: "@timestamp"
+                tlsAuthWithCACert: true
+              secureJsonData:
+                basicAuthPassword: $ES_GRAFANA_PASSWORD
+                tlsCACert: $__file{/etc/grafana/es-ca/ca.crt}
 
           # Loki를 철거한 뒤에도 Grafana DB에 남아 있던 데이터 소스를 지운다. 지워진 것을 확인한 뒤 다음 PR에서 이 줄을 뺀다
           # (계속 두면 나중에 같은 이름을 다시 만들 때 지워진다)

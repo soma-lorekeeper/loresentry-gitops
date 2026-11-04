@@ -77,7 +77,7 @@ cd bootstrap/dev
 
 | 리소스 | 만드는 곳 | 내용 |
 | --- | --- | --- |
-| 로깅 node group `lore-sentry-dev-logging-pool` | `02` | r7i.large 1대, 2b 서브넷만, label `role=logging`, taint `dedicated=logging:NoSchedule`. ES·Logstash의 EBS 디스크가 2b에 묶이므로 교체돼도 같은 AZ에 뜬다 |
+| 로깅 node group `lore-sentry-dev-logging-pool-v2` | `02` | r7i.xlarge 1대(2026-11-04 r7i.large에서 교체), 2b 서브넷만, label `role=logging`, taint `dedicated=logging:NoSchedule`. ES·Logstash의 EBS 디스크가 2b에 묶이므로 교체돼도 같은 AZ에 뜬다 |
 | 파라미터 그룹 `lore-sentry-dev-postgres18`, `lore-sentry-dev-neptune14` | `03` | 에러·느린 쿼리·잠금 대기(PostgreSQL), 느린 쿼리(Neptune) 로그. 값은 `bootstrap/aws/*-logging-parameters.json` |
 | 버킷 `loresentry-log-archive-dev-<account>` | `04` | Logstash가 쓰는 가공본 보관, 1년 |
 | 버킷 `loresentry-aws-logs-dev-<account>` | `04` | ALB(`alb/`)·CloudFront(`cloudfront/`)가 쓰는 원천 로그, 30일. 버킷 정책이 각자 자기 접두어에만 쓰게 한다 |
