@@ -64,6 +64,7 @@ git push
 ├── platform-dev/                      # dev's StorageClass and argocd-dev Ingress
 ├── loadtest/                          # session seeding and k6 scenarios for dev
 ├── logging/                           # ECK logging stack, base + overlays/{dev,prod} (see logging/README.md)
+├── alerting/                          # alert rules, base + overlays/{dev,prod} (conventions: docs ALERTING.md)
 │
 ├── argocd-apps/                       # one Application per component
 │   ├── aws-load-balancer-controller.yaml

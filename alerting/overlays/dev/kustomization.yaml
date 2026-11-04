@@ -1,0 +1,9 @@
+# dev 클러스터의 경보 규칙. argocd-apps-dev/alerting.yaml이 읽는다.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# 규칙 CR은 monitoring에 둔다(Prometheus·Grafana와 같은 곳). 규칙이 보는 대상 namespace와는 상관없다
+namespace: monitoring
+
+resources:
+  - ../../base
