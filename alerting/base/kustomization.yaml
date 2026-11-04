@@ -10,3 +10,5 @@ resources:
   - grafana/notifications.yaml
   # Grafana 로그 경보 규칙 12개(docs ALERTING.md §6.4)
   - grafana/log-rules.yaml
+  # Grafana 로그 스택 경보 규칙 7개(docs ALERTING.md §6.5, Stack Monitoring 데이터)
+  - grafana/log-stack-rules.yaml
