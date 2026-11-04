@@ -92,7 +92,9 @@ spec:
               memory: 256Mi
             limits:
               cpu: 500m
-              memory: 512Mi
+              # EDOT Java agent(계측 클래스, span 버퍼)가 메모리를 더 쓴다. 로컬 실측(2026-11-05) 시작 직후 357MiB, 요청 1,500개 뒤
+              # 382MiB로 512Mi의 75%(heap 상한) 근처라 늘린다. heap 상한은 이미지 시작 스크립트가 이 값의 75%로 정한다
+              memory: 768Mi
           volumeMounts:
             # 공개키는 비밀이 아니므로 ConfigMap 이다. 개인키는 Secret 의 env 로만 들어간다.
             - name: jwt-public

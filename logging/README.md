@@ -99,7 +99,7 @@ Logstash를 거치지 않으므로 민감한 값은 collector가 처리한다(`o
 
 | 항목 | 값 |
 | --- | --- |
-| 받는 주소 | `edot-collector.monitoring.svc:4317`(gRPC), `:4318`(HTTP). 앱 쪽 전송 설정은 workload overlay에서 켠다(dev: Java는 `MANAGEMENT_TRACING_EXPORT_OTLP_ENABLED`·`MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT`, Python은 `OTEL_EXPORTER_OTLP_ENDPOINT`, 공통 `OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=dev`) |
+| 받는 주소 | `edot-collector.monitoring.svc:4317`(gRPC), `:4318`(HTTP). 앱 쪽 전송 설정은 workload overlay에서 켠다. EDOT로 옮긴 서비스(authentication)는 `OTEL_TRACES_EXPORTER=otlp`·`OTEL_EXPORTER_OTLP_ENDPOINT`·`OTEL_EXPORTER_OTLP_PROTOCOL`과, Downward API의 파드 이름·namespace를 넣은 `OTEL_RESOURCE_ATTRIBUTES`(`deployment.environment.name`, `k8s.namespace.name`, `k8s.pod.name`, `service.instance.id`)다. agent의 기본값(보내지 않음, 계측 범위)은 서비스 이미지의 `otel-agent.properties`에 있다. 옮기기 전 Java는 `MANAGEMENT_TRACING_EXPORT_OTLP_ENABLED`·`MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT`, Python은 `OTEL_EXPORTER_OTLP_ENDPOINT`를 쓴다 |
 | 버리는 trace | `tail_sampling`의 `drop` 정책이 두 가지 trace를 자식 span까지 통째로 버리고, 나머지 trace는 모두 남긴다. 판단을 위해 trace를 5초 모았다가 내보낸다. (1) 빈 폴링 회차: 앱이 할 일 없던 회차의 span에 `loresentry.polling.idle=true`를 단다. (2) 성공한 헬스체크: root span이 `/health`·`/health/**` 요청이고 응답이 400 미만이다. 속성 이름이 세 가지(OpenTelemetry 안정 이름 `url.path`·`http.response.status_code`, Python 옛 이름 `http.target`·`http.status_code`, Micrometer `uri`·`status`)라 조건도 세 줄이다. 실패한 헬스체크는 남는다 |
 | 쓰는 곳 | `traces-*.otel-*`(span), `logs-*.otel-*`(예외 event = APM 오류), `metrics-*.otel-*`(connector가 만든 서비스·트랜잭션 집계, 1m·10m·60m) |
 | 보존·레플리카 | 30일, 0. traces·metrics는 `*-otel-custom.json`, logs는 `logs-custom.json`이 정한다. 내장 ILM 정책은 삭제 단계가 없어 `prefer_ilm: false`로 data stream lifecycle을 쓴다 |
@@ -129,6 +129,7 @@ KUBECONFIG=<dev admin kubeconfig> python3 logging/tools/apm_consistency.py --con
   C7만 gateway에 위조 `traceparent`를 붙인 요청 하나를 보낸다(`--gateway-url`을 줄 때만).
 - 결과는 마크다운 표이고, FAIL이 있으면 종료 코드 1이다. 창 안에 그 흐름·호출이 없으면 SKIP이나 "표본 없음"이므로 트래픽을 만든 뒤 돌린다.
 - EDOT로 옮기는 동안에는 옮긴 서비스만 `--service`로 고른다. 옮기기 전 서비스는 C1·C2·C6·C8·C11에서 실패하는 것이 정상이다.
+- 기동(Flyway·Hibernate, `main` 스레드)과 연결 풀(`HikariPool-*`)의 DB 쿼리는 흐름 밖이라 부모 없는 span이다. C5는 이것을 실패로 세지 않고 따로 적는다.
 
 ## 누가 읽나
 
