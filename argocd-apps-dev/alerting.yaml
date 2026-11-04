@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alerting
+  namespace: argocd
+  annotations:
+    # kube-prometheus-stack(-5) 뒤. 앱끼리는 서로의 Healthy를 기다리지 않으므로, PrometheusRule CRD가 아직 없을 때를
+    # 견디도록 아래 SkipDryRunOnMissingResource와 retry를 둔다
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+
+  # 이 클러스터의 경보 규칙(Prometheus 규칙, 나중에 Grafana 로그 규칙·ServiceMonitor).
+  # 규약: docs 저장소 ALERTING.md. 경로·Slack 설정은 kube-prometheus-stack.yaml의 alertmanager.config
+  source:
+    repoURL: https://github.com/soma-lorekeeper/loresentry-gitops.git
+    targetRevision: main
+    path: alerting/overlays/dev
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

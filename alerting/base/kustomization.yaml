@@ -1,0 +1,8 @@
+# 경보 규칙. 두 환경이 같이 쓰는 규칙만 둔다. 환경마다 다른 값은 overlays/ENV에서 바꾼다.
+# 규약과 규칙 목록: docs 저장소 ALERTING.md, 구성과 흐름: ALERTING_ARCHITECTURE.md
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  # Prometheus 규칙(Prometheus Operator가 클러스터의 모든 PrometheusRule을 읽는다)
+  - prometheus/infra.yaml
