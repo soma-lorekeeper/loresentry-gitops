@@ -113,8 +113,9 @@ spec:
               - name: varlogpods
                 mountPath: /var/log/pods
                 readOnly: true
-          # Stack Monitoring sidecar(spec.monitoring). ECK는 자원값을 넣지 않으므로 Elastic의 Metricbeat 참고 매니페스트 값을 쓴다
-          - name: metricbeat
+          # Stack Monitoring sidecar(spec.monitoring). ECK는 자원값을 넣지 않으므로 Elastic의 Metricbeat 참고 매니페스트 값을 쓴다.
+          # Beat에서는 ECK가 sidecar 이름을 metrics-monitoring-sidecar로 바꿔 붙이므로 같은 이름이어야 합쳐진다
+          - name: metrics-monitoring-sidecar
             resources:
               requests:
                 cpu: 100m
