@@ -8,6 +8,7 @@
 #       (Grafana는 같은 폴더에 같은 이름의 규칙을 둘 수 없다). 수집 멈춤·failure store 규칙은 고정 라벨이다.
 # 결과 없음(NoData)은 OK다(오류가 없는 평소에는 개수 쿼리 결과가 비어 있다). 수집 멈춤 규칙만 Alerting이다.
 # 쿼리 오류는 직전 상태를 유지하고(ES가 잠깐 끊겨도 한꺼번에 울리지 않게), LogIngestionStopped만 Error로 알린다.
+# Grafana provisioning은 파일 안의 $이름을 환경 변수로 바꾼다. 템플릿 변수($labels·$values)는 $$로 적어야 그대로 남는다.
 # 이 파일은 생성기로 만들었다. 규칙을 바꿀 때는 이 파일을 직접 고치면 된다.
 apiVersion: v1
 kind: ConfigMap
@@ -88,13 +89,13 @@ data:
         execErrState: KeepLast
         for: 0s
         labels:
-          severity: '{{ if ge $values.B.Value 20.0 }}critical{{ else }}warning{{ end }}'
-          service: '{{ index $labels "service.name" }}'
-          namespace: '{{ index $labels "service.environment" }}'
+          severity: '{{ if ge $$values.B.Value 20.0 }}critical{{ else }}warning{{ end }}'
+          service: '{{ index $$labels "service.name" }}'
+          namespace: '{{ index $$labels "service.environment" }}'
         annotations:
-          summary: '{{ index $labels "service.name" }}에서 최근 5분 동안 error 로그가 {{ printf "%.0f" $values.B.Value }}건 나왔어요.'
+          summary: '{{ index $$labels "service.name" }}에서 최근 5분 동안 error 로그가 {{ printf "%.0f" $$values.B.Value }}건 나왔어요.'
           description: 20건 이상이면 critical이에요. Kibana에서 error.type과 message를 확인하세요.
-          kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'service.name:%22{{ index $labels "service.name" }}%22%20and%20log.level:error'))
+          kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'service.name:%22{{ index $$labels "service.name" }}%22%20and%20log.level:error'))
       - uid: app-warn-log-spike
         title: AppWarnLogSpike
         condition: C
@@ -160,12 +161,12 @@ data:
         for: 0s
         labels:
           severity: warning
-          service: '{{ index $labels "service.name" }}'
-          namespace: '{{ index $labels "service.environment" }}'
+          service: '{{ index $$labels "service.name" }}'
+          namespace: '{{ index $$labels "service.environment" }}'
         annotations:
-          summary: '{{ index $labels "service.name" }}에서 최근 5분 동안 warn 로그가 {{ printf "%.0f" $values.B.Value }}건 나왔어요.'
+          summary: '{{ index $$labels "service.name" }}에서 최근 5분 동안 warn 로그가 {{ printf "%.0f" $$values.B.Value }}건 나왔어요.'
           description: 평소 5분에 최대 5건이에요. warn에는 4xx 응답이 들어 있어 잘못된 요청이 몰렸거나 인증이 깨졌을 수 있어요.
-          kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'service.name:%22{{ index $labels "service.name" }}%22%20and%20log.level:warn'))
+          kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'service.name:%22{{ index $$labels "service.name" }}%22%20and%20log.level:warn'))
       - uid: dependency-unavailable
         title: DependencyUnavailable
         condition: C
@@ -231,12 +232,12 @@ data:
         for: 0s
         labels:
           severity: critical
-          service: '{{ index $labels "service.name" }}'
-          namespace: '{{ index $labels "service.environment" }}'
+          service: '{{ index $$labels "service.name" }}'
+          namespace: '{{ index $$labels "service.environment" }}'
         annotations:
-          summary: '{{ index $labels "service.name" }}가 의존 서비스에 닿지 못해 최근 5분 동안 {{ printf "%.0f" $values.B.Value }}번 실패했어요.'
+          summary: '{{ index $$labels "service.name" }}가 의존 서비스에 닿지 못해 최근 5분 동안 {{ printf "%.0f" $$values.B.Value }}번 실패했어요.'
           description: error.type이 *_UNAVAILABLE인 응답(503)이에요. 사용자가 실패를 보고 있어요.
-          kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'service.name:%22{{ index $labels "service.name" }}%22%20and%20error.type:*_UNAVAILABLE'))
+          kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'service.name:%22{{ index $$labels "service.name" }}%22%20and%20error.type:*_UNAVAILABLE'))
       - uid: alb-server-errors
         title: AlbServerErrors
         condition: C
@@ -301,11 +302,11 @@ data:
         execErrState: KeepLast
         for: 0s
         labels:
-          severity: '{{ if ge $values.B.Value 50.0 }}critical{{ else }}warning{{ end }}'
-          service: '{{ index $labels "service.name" }}'
-          namespace: '{{ index $labels "service.environment" }}'
+          severity: '{{ if ge $$values.B.Value 50.0 }}critical{{ else }}warning{{ end }}'
+          service: '{{ index $$labels "service.name" }}'
+          namespace: '{{ index $$labels "service.environment" }}'
         annotations:
-          summary: ALB가 최근 15분 동안 5xx를 {{ printf "%.0f" $values.B.Value }}번 돌려줬어요.
+          summary: ALB가 최근 15분 동안 5xx를 {{ printf "%.0f" $$values.B.Value }}번 돌려줬어요.
           description: ALB 로그는 5분 단위로 늦게 도착해요. 50건 이상이면 critical이에요.
           kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'data_stream.dataset:%22aws.alb%22%20and%20log.level:error'))
       - uid: rds-error-logs
@@ -373,10 +374,10 @@ data:
         for: 0s
         labels:
           severity: warning
-          service: '{{ index $labels "service.name" }}'
-          namespace: '{{ index $labels "service.environment" }}'
+          service: '{{ index $$labels "service.name" }}'
+          namespace: '{{ index $$labels "service.environment" }}'
         annotations:
-          summary: RDS PostgreSQL에 최근 15분 동안 error 로그가 {{ printf "%.0f" $values.B.Value }}건 있어요.
+          summary: RDS PostgreSQL에 최근 15분 동안 error 로그가 {{ printf "%.0f" $$values.B.Value }}건 있어요.
           description: 데드락·직렬화 실패·연결 거부 같은 DB 오류예요. error.code를 확인하세요.
           kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'data_stream.dataset:%22aws.rds%22%20and%20log.level:error'))
       - uid: rds-slow-queries
@@ -444,10 +445,10 @@ data:
         for: 0s
         labels:
           severity: warning
-          service: '{{ index $labels "service.name" }}'
-          namespace: '{{ index $labels "service.environment" }}'
+          service: '{{ index $$labels "service.name" }}'
+          namespace: '{{ index $$labels "service.environment" }}'
         annotations:
-          summary: RDS PostgreSQL에 최근 15분 동안 1초 넘는 쿼리가 {{ printf "%.0f" $values.B.Value }}건 있어요.
+          summary: RDS PostgreSQL에 최근 15분 동안 1초 넘는 쿼리가 {{ printf "%.0f" $$values.B.Value }}건 있어요.
           description: 파라미터 그룹 기준 1초 이상 걸린 쿼리예요. event.duration과 쿼리를 확인하세요.
           kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'data_stream.dataset:%22aws.rds%22%20and%20log.level:warn%20and%20event.duration:*'))
       - uid: neptune-error-logs
@@ -515,10 +516,10 @@ data:
         for: 0s
         labels:
           severity: warning
-          service: '{{ index $labels "service.name" }}'
-          namespace: '{{ index $labels "service.environment" }}'
+          service: '{{ index $$labels "service.name" }}'
+          namespace: '{{ index $$labels "service.environment" }}'
         annotations:
-          summary: Neptune에 최근 15분 동안 실패한 쿼리가 {{ printf "%.0f" $values.B.Value }}건 있어요.
+          summary: Neptune에 최근 15분 동안 실패한 쿼리가 {{ printf "%.0f" $$values.B.Value }}건 있어요.
           description: slowquery 로그에서 예외가 있는 쿼리예요. error.type을 확인하세요.
           kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'data_stream.dataset:%22aws.neptune%22%20and%20log.level:error'))
       - uid: neptune-slow-queries
@@ -586,10 +587,10 @@ data:
         for: 0s
         labels:
           severity: warning
-          service: '{{ index $labels "service.name" }}'
-          namespace: '{{ index $labels "service.environment" }}'
+          service: '{{ index $$labels "service.name" }}'
+          namespace: '{{ index $$labels "service.environment" }}'
         annotations:
-          summary: Neptune에 최근 15분 동안 1초 넘는 쿼리가 {{ printf "%.0f" $values.B.Value }}건 있어요.
+          summary: Neptune에 최근 15분 동안 1초 넘는 쿼리가 {{ printf "%.0f" $$values.B.Value }}건 있어요.
           description: slowquery 기준 1초 이상 걸린 쿼리예요. event.duration과 쿼리를 확인하세요.
           kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'data_stream.dataset:%22aws.neptune%22%20and%20log.level:warn'))
       - uid: log-ingestion-stopped
@@ -752,7 +753,7 @@ data:
           service: elasticsearch
           namespace: monitoring
         annotations:
-          summary: 최근 15분 동안 ES가 색인을 거부한 로그가 {{ printf "%.0f" $values.B.Value }}건 있어요.
+          summary: 최근 15분 동안 ES가 색인을 거부한 로그가 {{ printf "%.0f" $$values.B.Value }}건 있어요.
           description: 필드 타입 충돌 같은 스키마 문제예요. failure store(logs-*::failures)에서 error.message를 확인하세요.
       - uid: unknown-app-log-lines
         title: UnknownAppLogLines
@@ -819,9 +820,9 @@ data:
         for: 0s
         labels:
           severity: warning
-          service: '{{ index $labels "service.name" }}'
-          namespace: '{{ index $labels "service.environment" }}'
+          service: '{{ index $$labels "service.name" }}'
+          namespace: '{{ index $$labels "service.environment" }}'
         annotations:
-          summary: '{{ index $labels "service.name" }}가 최근 15분 동안 ECS 형식이 아닌 줄을 {{ printf "%.0f" $values.B.Value }}줄 냈어요.'
+          summary: '{{ index $$labels "service.name" }}가 최근 15분 동안 ECS 형식이 아닌 줄을 {{ printf "%.0f" $$values.B.Value }}줄 냈어요.'
           description: 앱 로그 규약(LOG_SCHEMA.md)을 따르지 않는 줄이에요. event.original로 어떤 줄인지 확인하세요.
-          kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'service.name:%22{{ index $labels "service.name" }}%22%20and%20log.level:unknown'))
+          kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'service.name:%22{{ index $$labels "service.name" }}%22%20and%20log.level:unknown'))
