@@ -45,6 +45,13 @@
               }
             }
           }
+        },
+        {
+          "service_identity_as_keyword": {
+            "path_match": ["service.name", "service.version"],
+            "match_mapping_type": "string",
+            "mapping": { "type": "keyword" }
+          }
         }
       ],
       "properties": {
@@ -54,12 +61,6 @@
             "logger": { "type": "keyword" },
             "layer": { "type": "keyword" },
             "package": { "type": "keyword" }
-          }
-        },
-        "service": {
-          "properties": {
-            "name": { "type": "keyword" },
-            "version": { "type": "keyword" }
           }
         },
         "http": {

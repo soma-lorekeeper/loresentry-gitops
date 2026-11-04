@@ -136,3 +136,7 @@ Logstash를 거치지 않으므로 민감한 값은 collector가 처리한다(`o
   검색에서도 빠지므로(`.text` 전문 검색만 남는다),
   wildcard 그대로 `ignore_above`를 Logstash의 ES 쪽 길이 상한(`to-es.conf`, 262144 bytes)과 같게 둔다. 인덱스 기본값을
   올리지 않는 이유는 keyword 필드가 Lucene term 한도(32766 bytes)를 넘으면 문서가 거부되기 때문이다.
+- `service.name`·`service.version`도 dynamic template(`service_identity_as_keyword`)이다. OTel 문서(`logs-*.otel-*`,
+  EDOT Collector가 쓰는 APM 오류)에는 이 값이 `resource.attributes.*` 아래에만 있고, OTel template이 그것을 위 이름으로
+  보여 준다. property로 두면 그 이름을 빈 keyword 필드가 차지해 Kibana APM이 오류를 서비스에 붙이지 못한다. 앱 로그에는
+  이 필드가 직접 있어 dynamic template이 keyword로 만든다(property였을 때와 같은 타입).
