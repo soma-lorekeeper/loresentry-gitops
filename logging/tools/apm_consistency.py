@@ -67,12 +67,16 @@ EXPECTED_DEPENDENCIES = {
     "graph-rag-api": ["request", "http", "aws:S3", "aws:KMS", "genai", "messaging:process", "messaging:publish", "schedule"],
 }
 
-# span 종류별 표준 속성. 안정 이름과 옛 이름이 다르면 둘 중 하나가 있으면 된다(튜플).
+# span 종류별 표준 속성. 안정 이름과 옛 이름이 다르면 둘 중 하나가 있으면 된다(튜플). collector의 elasticapm processor는 messaging
+# 속성(system·destination·operation)을 APM 필드(span.subtype, span.message.queue.name·service.target.name, span.action)로 옮기고
+# 원래 이름을 남기지 않는다(2026-11-05 dev 확인). 그래서 messaging은 그 APM 필드도 같은 뜻으로 받는다.
 REQUIRED_ATTRIBUTES = {
     "request": ["http.request.method", "url.path", "http.response.status_code"],
     "http": ["http.request.method", "server.address", "url.full"],
     "db": [("db.system.name", "db.system"), "server.address"],
-    "messaging": ["messaging.system", "messaging.destination.name", ("messaging.operation.type", "messaging.operation")],
+    "messaging": [("messaging.system", "span.subtype"),
+                  ("messaging.destination.name", "span.message.queue.name", "service.target.name"),
+                  ("messaging.operation.type", "messaging.operation", "span.action")],
     "aws": ["rpc.system", "rpc.service", "rpc.method"],
     "genai": [("gen_ai.provider.name", "gen_ai.system"), "gen_ai.request.model"],
 }
@@ -265,7 +269,8 @@ def span_category(span):
     if attr(span, "gen_ai.system") or attr(span, "gen_ai.provider.name"):
         return "genai"
     if attr(span, "rpc.system") == "aws-api":
-        return f"aws:{attr(span, 'rpc.service') or '?'}"
+        # 서비스 이름의 대소문자는 SDK마다 다르다(Java AWS SDK는 Kms, Python botocore는 KMS). 대문자로 맞춘다
+        return f"aws:{str(attr(span, 'rpc.service') or '?').upper()}"
     db = attr(span, "db.system.name") or attr(span, "db.system")
     if db:
         return f"db:{db}"
