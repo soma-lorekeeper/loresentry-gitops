@@ -60,4 +60,7 @@ spec:
             storageClassName: gp3
             resources:
               requests:
-                storage: 20Gi
+                # 로그(30일)와 APM traces·지표(30일)를 함께 둔다. 부하 테스트 중 실측(2026-11-04)은 로그 하루 약 1GB,
+                # traces 하루 약 4GB였다. 디스크가 95%를 넘으면 ES가 index를 읽기 전용으로 바꿔 수집이 멈춘다.
+                # gp3(allowVolumeExpansion)라 ECK가 PVC를 그 자리에서 늘린다. EBS는 줄일 수 없으므로 늘리기만 한다.
+                storage: 128Gi
