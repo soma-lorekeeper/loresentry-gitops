@@ -36,9 +36,11 @@ logging/
 │   └── otel-collector/
 │       ├── collector.yaml        EDOT Collector 1대, Service edot-collector:4317·4318 (wave 2)
 │       └── otel.yml              span 수신 → 민감한 값 지우기·가리기 → ES, APM 집계 지표
-└── overlays/
-    ├── dev/                      dev 값 (Kibana 주소·Ingress, 환경·클러스터 이름)
-    └── prod/                     prod 값 (dev 검증이 끝난 뒤 prod에 반영할 때 추가)
+├── overlays/
+│   ├── dev/                      dev 값 (Kibana 주소·Ingress, 환경·클러스터 이름)
+│   └── prod/                     prod 값 (dev 검증이 끝난 뒤 prod에 반영할 때 추가)
+└── tools/
+    └── apm_consistency.py        로그·APM 정합성 점검(조회만, 아래 "로그·APM 정합성 점검")
 ```
 
 Argo CD는 같은 Application 안에서 wave 순서대로 적용하고, 앞 wave가 Healthy가 된 뒤 다음 wave로 넘어간다.
@@ -112,6 +114,21 @@ Logstash를 거치지 않으므로 민감한 값은 collector가 처리한다(`o
 - 예외의 스택은 span에 남기지 않는다. 같은 `span.id`의 앱 로그 `error.stack_trace`(메시지 없는 스택)로 본다.
 - 설정을 바꾼 뒤에는 로컬에서 ES 9.5.5(보안 켬)와 이 이미지로 시험 span을 보내 ES 문서를 확인한다. 이 파일의 `$`는 환경 변수
   치환 표시라 정규식 치환의 `${1}`은 `$${1}`로 적는다.
+
+### 로그·APM 정합성 점검
+
+`tools/apm_consistency.py`가 dev ES에서 로그와 span이 같은 곳을 가리키는지, 흐름에 빈 구간이 없는지 본다(docs
+APM_ARCHITECTURE.md 11절 C1~C9·C11). 앱의 추적 엔진·계측·로깅 팩토리나 이 collector 규칙을 바꾼 뒤 돌린다.
+
+```sh
+KUBECONFIG=<dev admin kubeconfig> python3 logging/tools/apm_consistency.py --context lore-sentry-dev-admin \
+  --since 30m [--service authentication-api ...] [--only C1,C5] [--gateway-url https://<dev gateway>]
+```
+
+- 조회만 한다. `kubectl port-forward`로 ES에 붙고, `elastic` 비밀번호와 CA는 Secret에서 읽어 프로세스 메모리에만 둔다.
+  C7만 gateway에 위조 `traceparent`를 붙인 요청 하나를 보낸다(`--gateway-url`을 줄 때만).
+- 결과는 마크다운 표이고, FAIL이 있으면 종료 코드 1이다. 창 안에 그 흐름·호출이 없으면 SKIP이나 "표본 없음"이므로 트래픽을 만든 뒤 돌린다.
+- EDOT로 옮기는 동안에는 옮긴 서비스만 `--service`로 고른다. 옮기기 전 서비스는 C1·C2·C6·C8·C11에서 실패하는 것이 정상이다.
 
 ## 누가 읽나
 
