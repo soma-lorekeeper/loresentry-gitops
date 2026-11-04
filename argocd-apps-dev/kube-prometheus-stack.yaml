@@ -347,6 +347,12 @@ spec:
                 tlsCACert: $__file{/etc/grafana/es-ca/ca.crt}
 
           sidecar:
+            # 대시보드는 label grafana_dashboard인 ConfigMap에서 읽는다(kps 기본값). 우리 대시보드(alerting/base/grafana/dashboards/)는
+            # annotation grafana_folder로 폴더를 정한다. annotation이 없는 kps 기본 대시보드는 그대로 General에 남는다
+            dashboards:
+              folderAnnotation: grafana_folder
+              provider:
+                foldersFromFilesStructure: true
             # 경보 provisioning(규칙, kps Alertmanager로 넘기는 contact point·policy)은 label grafana_alert가 붙은
             # ConfigMap(alerting/base/grafana/)에서 읽는다. 바뀌면 재시작 없이 다시 읽는다
             alerts:

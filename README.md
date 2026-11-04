@@ -328,6 +328,12 @@ consumer lag, and any message written to a `*.dlq` topic.
 Grafana loads Strimzi's dashboards for Kafka, KRaft, Kafka Exporter and the
 operators from the `1.2.0` tag at pod start, into a `Kafka` folder.
 
+In dev, our own dashboards (alerting overview, Argo CD) are JSON files in
+`alerting/base/grafana/dashboards/`. The dashboard sidecar loads them from
+ConfigMaps into a `LoreSentry` folder (annotation `grafana_folder`). Grafana's
+database is an `emptyDir`, so a dashboard saved only in the UI is lost on restart;
+change the JSON instead.
+
 ### Logs
 
 Alloy labels each stream with `namespace`, `pod`, `container`, `app` and `node`, and

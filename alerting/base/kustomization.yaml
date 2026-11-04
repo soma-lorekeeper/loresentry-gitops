@@ -12,3 +12,28 @@ resources:
   - grafana/log-rules.yaml
   # Grafana 로그 스택 경보 규칙 7개(docs ALERTING.md §6.5, Stack Monitoring 데이터)
   - grafana/log-stack-rules.yaml
+
+# Grafana 대시보드. Grafana의 dashboard sidecar가 label grafana_dashboard인 ConfigMap을 읽어 올린다.
+# Grafana DB는 emptyDir이라 화면에서 만든 대시보드는 재시작하면 사라지므로, 대시보드는 여기 JSON으로만 둔다(docs ALERTING.md §9).
+# 화면에서 고친 뒤에는 JSON을 내보내 이 파일을 바꾼다. annotation grafana_folder가 Grafana 폴더 이름이다.
+configMapGenerator:
+  # 경보 현황: 지금 울리는 경보와 경보 경로(Prometheus·Grafana → Alertmanager → Slack)의 건강. 직접 만든 것
+  - name: grafana-dashboard-alerting-overview
+    files:
+      - grafana/dashboards/alerting-overview.json
+    options:
+      disableNameSuffixHash: true
+      labels:
+        grafana_dashboard: "1"
+      annotations:
+        grafana_folder: LoreSentry
+  # Argo CD: Argo CD 저장소의 공식 예제(v3.5.2 examples/dashboard.json, Apache-2.0)를 그대로 쓴다. tag argocd만 더했다
+  - name: grafana-dashboard-argocd
+    files:
+      - grafana/dashboards/argocd.json
+    options:
+      disableNameSuffixHash: true
+      labels:
+        grafana_dashboard: "1"
+      annotations:
+        grafana_folder: LoreSentry
