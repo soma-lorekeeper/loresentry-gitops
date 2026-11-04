@@ -32,6 +32,7 @@ RESPONSE="$(
 )"
 
 # 응답의 encoded(base64로 감싼 "id:key")가 exporter의 api_key 값이다. 키는 stdin으로만 Secret에 넣고, 화면에는 키 ID만 낸다.
-printf '%s' "$RESPONSE" | jq -er .encoded \
+# -j는 끝에 줄바꿈을 붙이지 않는다. 줄바꿈이 값에 들어가면 Authorization 헤더가 잘못되어 collector가 span을 모두 버린다.
+printf '%s' "$RESPONSE" | jq -je .encoded \
   | kc -n "$LOGGING_NAMESPACE" create secret generic "$SECRET" --from-file=api_key=/dev/stdin >/dev/null
 echo "created secret ${SECRET} (API key id $(printf '%s' "$RESPONSE" | jq -r .id))"
