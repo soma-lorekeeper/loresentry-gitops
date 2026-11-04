@@ -1,0 +1,827 @@
+# Grafana 로그 경보 규칙(docs ALERTING.md §6.4와 1:1). Grafana sidecar가 label grafana_alert: "1"인 ConfigMap을 읽는다.
+#
+# 모든 규칙은 같은 모양이다.
+#   A: ES 개수 쿼리(창 = relativeTimeRange). service.name·service.environment별로 나눠 1분 단위 개수를 센다
+#   B: A를 창 전체로 더한다(reduce sum)
+#   C: B가 기준을 넘으면 firing(threshold). pending 기간은 0이다. 창으로 센 값이라 순간적인 흔들림은 이미 걸러진다
+# 라벨: service = service.name, namespace = service.environment(dev·prod). 두 단계 severity는 B 값으로 정한다
+#       (Grafana는 같은 폴더에 같은 이름의 규칙을 둘 수 없다). 수집 멈춤·failure store 규칙은 고정 라벨이다.
+# 결과 없음(NoData)은 OK다(오류가 없는 평소에는 개수 쿼리 결과가 비어 있다). 수집 멈춤 규칙만 Alerting이다.
+# 쿼리 오류는 직전 상태를 유지하고(ES가 잠깐 끊겨도 한꺼번에 울리지 않게), LogIngestionStopped만 Error로 알린다.
+# 이 파일은 생성기로 만들었다. 규칙을 바꿀 때는 이 파일을 직접 고치면 된다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-alerting-log-rules
+  labels:
+    grafana_alert: "1"
+data:
+  log-rules.yaml: |
+    apiVersion: 1
+    groups:
+    - orgId: 1
+      name: loresentry-logs
+      folder: LoreSentry
+      interval: 1m
+      rules:
+      - uid: app-error-logs
+        title: AppErrorLogs
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 300
+            to: 0
+          datasourceUid: es-logs
+          model:
+            refId: A
+            query: data_stream.dataset:loresentry.* AND log.level:error
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _count
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: service.environment
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _count
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 0
+        noDataState: OK
+        execErrState: KeepLast
+        for: 0s
+        labels:
+          severity: '{{ if ge $values.B.Value 20.0 }}critical{{ else }}warning{{ end }}'
+          service: '{{ index $labels "service.name" }}'
+          namespace: '{{ index $labels "service.environment" }}'
+        annotations:
+          summary: '{{ index $labels "service.name" }}에서 최근 5분 동안 error 로그가 {{ printf "%.0f" $values.B.Value }}건 나왔어요.'
+          description: 20건 이상이면 critical이에요. Kibana에서 error.type과 message를 확인하세요.
+          kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'service.name:%22{{ index $labels "service.name" }}%22%20and%20log.level:error'))
+      - uid: app-warn-log-spike
+        title: AppWarnLogSpike
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 300
+            to: 0
+          datasourceUid: es-logs
+          model:
+            refId: A
+            query: data_stream.dataset:loresentry.* AND log.level:warn
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _count
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: service.environment
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _count
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 49
+        noDataState: OK
+        execErrState: KeepLast
+        for: 0s
+        labels:
+          severity: warning
+          service: '{{ index $labels "service.name" }}'
+          namespace: '{{ index $labels "service.environment" }}'
+        annotations:
+          summary: '{{ index $labels "service.name" }}에서 최근 5분 동안 warn 로그가 {{ printf "%.0f" $values.B.Value }}건 나왔어요.'
+          description: 평소 5분에 최대 5건이에요. warn에는 4xx 응답이 들어 있어 잘못된 요청이 몰렸거나 인증이 깨졌을 수 있어요.
+          kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'service.name:%22{{ index $labels "service.name" }}%22%20and%20log.level:warn'))
+      - uid: dependency-unavailable
+        title: DependencyUnavailable
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 300
+            to: 0
+          datasourceUid: es-logs
+          model:
+            refId: A
+            query: data_stream.dataset:loresentry.* AND error.type:*_UNAVAILABLE
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _count
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: service.environment
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _count
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 2
+        noDataState: OK
+        execErrState: KeepLast
+        for: 0s
+        labels:
+          severity: critical
+          service: '{{ index $labels "service.name" }}'
+          namespace: '{{ index $labels "service.environment" }}'
+        annotations:
+          summary: '{{ index $labels "service.name" }}가 의존 서비스에 닿지 못해 최근 5분 동안 {{ printf "%.0f" $values.B.Value }}번 실패했어요.'
+          description: error.type이 *_UNAVAILABLE인 응답(503)이에요. 사용자가 실패를 보고 있어요.
+          kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'service.name:%22{{ index $labels "service.name" }}%22%20and%20error.type:*_UNAVAILABLE'))
+      - uid: alb-server-errors
+        title: AlbServerErrors
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 900
+            to: 0
+          datasourceUid: es-logs
+          model:
+            refId: A
+            query: data_stream.dataset:aws.alb AND log.level:error
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _count
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: service.environment
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _count
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 4
+        noDataState: OK
+        execErrState: KeepLast
+        for: 0s
+        labels:
+          severity: '{{ if ge $values.B.Value 50.0 }}critical{{ else }}warning{{ end }}'
+          service: '{{ index $labels "service.name" }}'
+          namespace: '{{ index $labels "service.environment" }}'
+        annotations:
+          summary: ALB가 최근 15분 동안 5xx를 {{ printf "%.0f" $values.B.Value }}번 돌려줬어요.
+          description: ALB 로그는 5분 단위로 늦게 도착해요. 50건 이상이면 critical이에요.
+          kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'data_stream.dataset:%22aws.alb%22%20and%20log.level:error'))
+      - uid: rds-error-logs
+        title: RdsErrorLogs
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 900
+            to: 0
+          datasourceUid: es-logs
+          model:
+            refId: A
+            query: data_stream.dataset:aws.rds AND log.level:error
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _count
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: service.environment
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _count
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 0
+        noDataState: OK
+        execErrState: KeepLast
+        for: 0s
+        labels:
+          severity: warning
+          service: '{{ index $labels "service.name" }}'
+          namespace: '{{ index $labels "service.environment" }}'
+        annotations:
+          summary: RDS PostgreSQL에 최근 15분 동안 error 로그가 {{ printf "%.0f" $values.B.Value }}건 있어요.
+          description: 데드락·직렬화 실패·연결 거부 같은 DB 오류예요. error.code를 확인하세요.
+          kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'data_stream.dataset:%22aws.rds%22%20and%20log.level:error'))
+      - uid: rds-slow-queries
+        title: RdsSlowQueries
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 900
+            to: 0
+          datasourceUid: es-logs
+          model:
+            refId: A
+            query: data_stream.dataset:aws.rds AND log.level:warn AND _exists_:event.duration
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _count
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: service.environment
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _count
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 0
+        noDataState: OK
+        execErrState: KeepLast
+        for: 0s
+        labels:
+          severity: warning
+          service: '{{ index $labels "service.name" }}'
+          namespace: '{{ index $labels "service.environment" }}'
+        annotations:
+          summary: RDS PostgreSQL에 최근 15분 동안 1초 넘는 쿼리가 {{ printf "%.0f" $values.B.Value }}건 있어요.
+          description: 파라미터 그룹 기준 1초 이상 걸린 쿼리예요. event.duration과 쿼리를 확인하세요.
+          kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'data_stream.dataset:%22aws.rds%22%20and%20log.level:warn%20and%20event.duration:*'))
+      - uid: neptune-error-logs
+        title: NeptuneErrorLogs
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 900
+            to: 0
+          datasourceUid: es-logs
+          model:
+            refId: A
+            query: data_stream.dataset:aws.neptune AND log.level:error
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _count
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: service.environment
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _count
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 0
+        noDataState: OK
+        execErrState: KeepLast
+        for: 0s
+        labels:
+          severity: warning
+          service: '{{ index $labels "service.name" }}'
+          namespace: '{{ index $labels "service.environment" }}'
+        annotations:
+          summary: Neptune에 최근 15분 동안 실패한 쿼리가 {{ printf "%.0f" $values.B.Value }}건 있어요.
+          description: slowquery 로그에서 예외가 있는 쿼리예요. error.type을 확인하세요.
+          kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'data_stream.dataset:%22aws.neptune%22%20and%20log.level:error'))
+      - uid: neptune-slow-queries
+        title: NeptuneSlowQueries
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 900
+            to: 0
+          datasourceUid: es-logs
+          model:
+            refId: A
+            query: data_stream.dataset:aws.neptune AND log.level:warn
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _count
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: service.environment
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _count
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 0
+        noDataState: OK
+        execErrState: KeepLast
+        for: 0s
+        labels:
+          severity: warning
+          service: '{{ index $labels "service.name" }}'
+          namespace: '{{ index $labels "service.environment" }}'
+        annotations:
+          summary: Neptune에 최근 15분 동안 1초 넘는 쿼리가 {{ printf "%.0f" $values.B.Value }}건 있어요.
+          description: slowquery 기준 1초 이상 걸린 쿼리예요. event.duration과 쿼리를 확인하세요.
+          kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'data_stream.dataset:%22aws.neptune%22%20and%20log.level:warn'))
+      - uid: log-ingestion-stopped
+        title: LogIngestionStopped
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-logs
+          model:
+            refId: A
+            query: '*'
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: lt
+                params:
+                - 1
+        noDataState: Alerting
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: critical
+          service: logging
+          namespace: monitoring
+        annotations:
+          summary: 최근 10분 동안 ES에 들어온 로그가 없어요.
+          description: Filebeat·Logstash·Elasticsearch 중 어딘가에서 로그 수집이 멈췄어요. 평소에는 0이 될 수 없어요.
+      - uid: aws-log-ingestion-stopped
+        title: AwsLogIngestionStopped
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 1800
+            to: 0
+          datasourceUid: es-logs
+          model:
+            refId: A
+            query: data_stream.dataset:aws.*
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: lt
+                params:
+                - 1
+        noDataState: Alerting
+        execErrState: KeepLast
+        for: 0s
+        labels:
+          severity: warning
+          service: filebeat-aws
+          namespace: monitoring
+        annotations:
+          summary: 최근 30분 동안 ES에 들어온 AWS 로그가 없어요.
+          description: aws-logs Filebeat나 AWS 쪽 로그 전달이 멈췄어요. EKS authenticator 로그는 몇 분마다 들어와요.
+      - uid: log-index-failures
+        title: LogIndexFailures
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 900
+            to: 0
+          datasourceUid: es-log-failures
+          model:
+            refId: A
+            query: '*'
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 0
+        noDataState: OK
+        execErrState: KeepLast
+        for: 0s
+        labels:
+          severity: warning
+          service: elasticsearch
+          namespace: monitoring
+        annotations:
+          summary: 최근 15분 동안 ES가 색인을 거부한 로그가 {{ printf "%.0f" $values.B.Value }}건 있어요.
+          description: 필드 타입 충돌 같은 스키마 문제예요. failure store(logs-*::failures)에서 error.message를 확인하세요.
+      - uid: unknown-app-log-lines
+        title: UnknownAppLogLines
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 900
+            to: 0
+          datasourceUid: es-logs
+          model:
+            refId: A
+            query: data_stream.dataset:loresentry.* AND log.level:unknown
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _count
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: service.environment
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _count
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 9
+        noDataState: OK
+        execErrState: KeepLast
+        for: 0s
+        labels:
+          severity: warning
+          service: '{{ index $labels "service.name" }}'
+          namespace: '{{ index $labels "service.environment" }}'
+        annotations:
+          summary: '{{ index $labels "service.name" }}가 최근 15분 동안 ECS 형식이 아닌 줄을 {{ printf "%.0f" $values.B.Value }}줄 냈어요.'
+          description: 앱 로그 규약(LOG_SCHEMA.md)을 따르지 않는 줄이에요. event.original로 어떤 줄인지 확인하세요.
+          kibana_url: https://kibana-dev.loresentry.com/app/discover#/?_g=(time:(from:now-30m,to:now))&_a=(query:(language:kuery,query:'service.name:%22{{ index $labels "service.name" }}%22%20and%20log.level:unknown'))
