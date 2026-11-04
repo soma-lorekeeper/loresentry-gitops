@@ -89,7 +89,7 @@ patches:
   # service.version은 이미지의 시작 스크립트가 APP_VERSION으로 앞에 붙인다
   - target:
       kind: Deployment
-      name: (authentication-api)
+      name: (authentication-api|content-api)
     patch: |-
       - op: add
         path: /spec/template/spec/containers/0/env/-
@@ -128,7 +128,7 @@ patches:
   # 아직 옮기지 않은 Java 서비스: Boot의 OTLP exporter를 켜고 주소를 준다(Micrometer Tracing)
   - target:
       kind: Deployment
-      name: (gateway-api|content-api)
+      name: (gateway-api)
     patch: |-
       - op: add
         path: /spec/template/spec/containers/0/env/-
