@@ -72,6 +72,13 @@ spec:
       hosts:
         - logstash-ls-beats.monitoring.svc:5044
 
+  # 로그 스택 자신의 상태를 Stack Monitoring으로 남긴다(docs ALERTING.md §8). ECK가 파드마다 Metricbeat sidecar를 붙여
+  # 이 구성요소의 상태 API를 10초마다 읽어 같은 ES(logs)의 .monitoring-*에 쓴다. Grafana 로그 스택 경보가 이것을 읽는다.
+  monitoring:
+    metrics:
+      elasticsearchRefs:
+        - name: logs
+
   daemonSet:
     podTemplate:
       spec:
@@ -106,6 +113,14 @@ spec:
               - name: varlogpods
                 mountPath: /var/log/pods
                 readOnly: true
+          # Stack Monitoring sidecar(spec.monitoring). ECK는 자원값을 넣지 않으므로 Elastic의 Metricbeat 참고 매니페스트 값을 쓴다
+          - name: metricbeat
+            resources:
+              requests:
+                cpu: 100m
+                memory: 100Mi
+              limits:
+                memory: 200Mi
         volumes:
           - name: varlogcontainers
             hostPath:

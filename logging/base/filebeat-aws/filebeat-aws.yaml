@@ -73,6 +73,13 @@ spec:
       hosts:
         - logstash-ls-aws.monitoring.svc:5045
 
+  # 로그 스택 자신의 상태를 Stack Monitoring으로 남긴다(docs ALERTING.md §8). ECK가 파드마다 Metricbeat sidecar를 붙여
+  # 이 구성요소의 상태 API를 10초마다 읽어 같은 ES(logs)의 .monitoring-*에 쓴다. Grafana 로그 스택 경보가 이것을 읽는다.
+  monitoring:
+    metrics:
+      elasticsearchRefs:
+        - name: logs
+
   deployment:
     replicas: 1
     # 새 파드를 띄우기 전에 옛 파드를 내린다. 두 파드가 동시에 같은 원천을 읽지 않고, RWO 디스크도 넘겨받을 수 있다.
@@ -101,6 +108,14 @@ spec:
                 memory: 100Mi
               limits:
                 memory: 300Mi
+          # Stack Monitoring sidecar(spec.monitoring). ECK는 자원값을 넣지 않으므로 Elastic의 Metricbeat 참고 매니페스트 값을 쓴다
+          - name: metricbeat
+            resources:
+              requests:
+                cpu: 100m
+                memory: 100Mi
+              limits:
+                memory: 200Mi
         volumes:
           # ECK가 붙이는 데이터 볼륨(beat-data, /usr/share/filebeat/data)을 PVC로 바꾼다. 같은 이름이면 이쪽이 쓰인다.
           - name: beat-data
