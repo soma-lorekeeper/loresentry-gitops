@@ -93,6 +93,18 @@ if ! secret_exists monitoring grafana-admin; then
   echo "created monitoring/grafana-admin"
 fi
 
+# Alertmanager가 Slack에 쓰는 bot token(xoxb-…, scope chat:write·channels:history). Slack app은 사람이 만들어야 해서
+# SLACK_BOT_TOKEN이 있을 때만 만든다. Alertmanager는 이 Secret을 필수로 마운트하므로, 없으면 Alertmanager 파드가 뜨지 못한다
+if ! secret_exists monitoring alertmanager-slack; then
+  if [ -n "${SLACK_BOT_TOKEN:-}" ]; then
+    kc -n monitoring create secret generic alertmanager-slack \
+      --from-literal=bot-token="$SLACK_BOT_TOKEN" >/dev/null
+    echo "created monitoring/alertmanager-slack"
+  else
+    echo "WARN: SLACK_BOT_TOKEN is not set; create monitoring/alertmanager-slack before Alertmanager starts" >&2
+  fi
+fi
+
 echo "== 4. logical databases on ${POSTGRES_ID}"
 aws rds wait db-instance-available --db-instance-identifier "$POSTGRES_ID"
 PG_HOST="$(aws rds describe-db-instances --db-instance-identifier "$POSTGRES_ID" \

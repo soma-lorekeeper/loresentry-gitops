@@ -140,6 +140,7 @@ DB 마스터 비밀번호는 `aws rds describe-db-instances --db-instance-identi
 | `authentication-valkey-acl` / ConfigMap `authentication-jwt-public` | prod와 같은 ACL 명령 목록, dev 비밀번호의 해시 |
 | `ai-chat-openai` | `OPENAI_API_KEY`. 기본은 mock용 더미 |
 | `monitoring/grafana-admin` | Grafana admin |
+| `monitoring/alertmanager-slack` | Slack bot token(`bot-token`, `xoxb-…`, scope `chat:write`·`channels:history`). Slack app은 사람이 만들고, `SLACK_BOT_TOKEN`을 주면 만든다. 없으면 Alertmanager가 뜨지 못한다 |
 
 ## OpenAI mock
 
