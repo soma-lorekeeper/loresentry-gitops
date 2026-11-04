@@ -97,7 +97,8 @@ Logstash를 거치지 않으므로 민감한 값은 collector가 처리한다(`o
 
 | 항목 | 값 |
 | --- | --- |
-| 받는 주소 | `edot-collector.monitoring.svc:4317`(gRPC), `:4318`(HTTP). 앱 쪽 전송 설정은 workload overlay에서 켠다 |
+| 받는 주소 | `edot-collector.monitoring.svc:4317`(gRPC), `:4318`(HTTP). 앱 쪽 전송 설정은 workload overlay에서 켠다(dev: Java는 `MANAGEMENT_TRACING_EXPORT_OTLP_ENABLED`·`MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT`, Python은 `OTEL_EXPORTER_OTLP_ENDPOINT`, 공통 `OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=dev`) |
+| 버리는 trace | 앱이 할 일 없던 폴링 회차의 span에 `loresentry.polling.idle=true`를 단다. `tail_sampling`의 `drop` 정책이 그 trace를 자식 span(DB 조회)까지 통째로 버리고, 나머지 trace는 모두 남긴다. 판단을 위해 trace를 5초 모았다가 내보낸다 |
 | 쓰는 곳 | `traces-*.otel-*`(span), `logs-*.otel-*`(예외 event = APM 오류), `metrics-*.otel-*`(connector가 만든 서비스·트랜잭션 집계, 1m·10m·60m) |
 | 보존·레플리카 | 30일, 0. traces·metrics는 `*-otel-custom.json`, logs는 `logs-custom.json`이 정한다. 내장 ILM 정책은 삭제 단계가 없어 `prefer_ilm: false`로 data stream lifecycle을 쓴다 |
 | ES 계정 | API key(이름 `edot-collector`), Secret `edot-collector-es`. `*.otel-*` data stream 만들기·쓰기(`auto_configure`, `create_doc`)만 되고 읽기와 앱 로그 쓰기는 안 된다. dev는 `bootstrap/dev/09-apm-key.sh`가 만든다 |
