@@ -101,3 +101,10 @@ IngressClassParams `loadBalancerAttributes`), prod는 콘솔에서 한다.
   `trace.id`, `span.id`, `message`, `service.environment`, `orchestrator.cluster.name`, `kubernetes.*`, `error.stack_trace`
   등)를 `logs-custom.json`에 넣으면 ES가 template을 거부한다. 이 필드들은 내장 `ecs@mappings`가 keyword 등으로 만든다.
   고친 뒤에는 로컬 ES에 `PUT _component_template/logs@custom`을 먼저 해 본다.
+- 이런 필드의 매핑을 바꿔야 하면 property가 아니라 dynamic template으로 넣는다. alias로 이미 매핑된 OTel template에서는
+  쓰이지 않고, `logs-*-*`에서는 `logs@custom`의 dynamic template이 `ecs@mappings`의 것보다 앞에 합쳐져 먼저 적용된다.
+- `error.stack_trace`가 그 예다(`error_stack_trace_fully_indexed`). 로그 인덱스는 logsdb 모드라 `ignore_above`를 따로
+  정하지 않은 keyword·wildcard 필드는 8191자까지만 색인한다. 더 긴 스택은 ES|QL에서 null이 되고 exists 필터와 wildcard
+  검색에서도 빠지므로(`.text` 전문 검색만 남는다),
+  wildcard 그대로 `ignore_above`를 Logstash의 ES 쪽 길이 상한(`to-es.conf`, 262144 bytes)과 같게 둔다. 인덱스 기본값을
+  올리지 않는 이유는 keyword 필드가 Lucene term 한도(32766 bytes)를 넘으면 문서가 거부되기 때문이다.
