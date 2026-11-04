@@ -67,16 +67,21 @@ EXPECTED_DEPENDENCIES = {
     "graph-rag-api": ["request", "http", "aws:S3", "aws:KMS", "genai", "messaging:process", "messaging:publish", "schedule"],
 }
 
-# span 종류별 표준 속성. 안정 이름과 옛 이름이 다르면 둘 중 하나가 있으면 된다(튜플). collector의 elasticapm processor는 messaging
-# 속성(system·destination·operation)을 APM 필드(span.subtype, span.message.queue.name·service.target.name, span.action)로 옮기고
-# 원래 이름을 남기지 않는다(2026-11-05 dev 확인). 그래서 messaging은 그 APM 필드도 같은 뜻으로 받는다.
+# span 종류별 표준 속성. 안정 이름과 옛 이름이 다르면 둘 중 하나가 있으면 된다(튜플). `이름=값`은 그 속성이 그 값일 때만 있다고 본다.
+# collector의 elasticapm processor는 messaging 속성(system·destination·operation)을 APM 필드로 옮기고 원래 이름을 남기지 않는다
+# (2026-11-05 dev 확인). 그래서 messaging은 그 APM 필드도 같은 뜻으로 받는다.
+# - span(부모가 같은 서비스, 예: 발행): span.subtype, span.message.queue.name·service.target.name, span.action
+# - transaction(부모가 원격, 예: 다른 서비스가 보낸 레코드의 소비): system은 transaction.type=messaging, destination은
+#   transaction.message.queue.name이다. operation은 따로 남지 않는다. 원격 부모를 잇는 messaging transaction이 곧 소비(process)라
+#   transaction.type=messaging을 operation으로도 받는다
 REQUIRED_ATTRIBUTES = {
     "request": ["http.request.method", "url.path", "http.response.status_code"],
     "http": ["http.request.method", "server.address", "url.full"],
     "db": [("db.system.name", "db.system"), "server.address"],
-    "messaging": [("messaging.system", "span.subtype"),
-                  ("messaging.destination.name", "span.message.queue.name", "service.target.name"),
-                  ("messaging.operation.type", "messaging.operation", "span.action")],
+    "messaging": [("messaging.system", "span.subtype", "transaction.type=messaging"),
+                  ("messaging.destination.name", "span.message.queue.name", "service.target.name",
+                   "transaction.message.queue.name"),
+                  ("messaging.operation.type", "messaging.operation", "span.action", "transaction.type=messaging")],
     "aws": ["rpc.system", "rpc.service", "rpc.method"],
     "genai": [("gen_ai.provider.name", "gen_ai.system"), "gen_ai.request.model"],
 }
@@ -255,8 +260,14 @@ def attr(span, key):
 
 
 def has_attr(span, key):
+    """표준 속성이 있는지. key는 이름 하나 또는 같은 뜻의 이름 튜플이다. `이름=값`은 그 속성이 그 값일 때만 있다고 본다."""
     keys = key if isinstance(key, tuple) else (key,)
-    return any(attr(span, k) is not None for k in keys)
+    for k in keys:
+        name, _, expected = k.partition("=")
+        value = attr(span, name)
+        if value is not None and (not expected or str(value) == expected):
+            return True
+    return False
 
 
 def service_of(doc):
