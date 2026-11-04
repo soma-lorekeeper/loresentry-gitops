@@ -83,6 +83,10 @@ REQUIRED_RESOURCE = ["service.name", "service.version", "service.instance.id", "
 # (Python 스케줄·폴링 회차, 시작할 때 도는 작업)이다. 로깅 팩토리의 tracer 이름은 Java `com.loresentry.<서비스>.logging`, Python `app.logs`다.
 ALLOWED_INTERNAL_ROOT_SCOPES = re.compile(r"^(io\.opentelemetry\.spring-scheduling|com\.loresentry\.[a-z_]+\.logging|app\.logs)")
 
+# 흐름 밖에서 도는 DB 쿼리의 스레드(LOG_SCHEMA.md 7절 시작점). 기동(Flyway, Hibernate 검증, main 스레드)과 연결 풀이 연결을 만들 때
+# (HikariPool-*)다. 흐름이 아니라 부모가 없는 것이 맞아 C5에서 실패로 세지 않고 따로 센다. 다른 스레드의 부모 없는 DB span은 실패다.
+OUTSIDE_FLOW_DB_THREADS = re.compile(r"^(main|HikariPool-\d+[: ].*)$")
+
 # relay 회차 span 이름. 발행·소비 span이 이 trace에 붙으면 저장된 trace를 잇지 못한 것이다(C4).
 RELAY_ROUND_NAME = re.compile(r"(?i)outbox.?relay|^outbox-relay$|^refresh-relay$")
 
@@ -498,9 +502,13 @@ def check_c5(es, window, services, sample):
                     sample, ["name", "kind", "scope.name", "attributes", "resource.attributes.service.name"], sort=[{"@timestamp": "desc"}])
     health = sum(1 for s in roots if successful_health_root(s))
     disallowed = Counter()
+    outside_flow = Counter()
     for s in roots:
         kind = s.get("kind")
         if kind in ("Server", "Consumer"):
+            continue
+        if kind == "Client" and (span_category(s) or "").startswith("db:") and OUTSIDE_FLOW_DB_THREADS.match(str(attr(s, "thread.name") or "")):
+            outside_flow[f"{service_of(s)}:{attr(s, 'thread.name')}"] += 1
             continue
         if kind == "Internal" and ALLOWED_INTERNAL_ROOT_SCOPES.match(((s.get("scope") or {}).get("name") or "")):
             continue
@@ -519,6 +527,8 @@ def check_c5(es, window, services, sample):
                + (f" (부모 잃은 span 예: {lost.most_common(6)})" if lost else ""))
     else:
         r.note(text)
+    if outside_flow:
+        r.note(f"흐름 밖 DB 쿼리 root(기동·연결 풀) {sum(outside_flow.values())} (예: {outside_flow.most_common(4)})")
     return r
 
 
