@@ -83,9 +83,11 @@ REQUIRED_RESOURCE = ["service.name", "service.version", "service.instance.id", "
 # (Python 스케줄·폴링 회차, 시작할 때 도는 작업)이다. 로깅 팩토리의 tracer 이름은 Java `com.loresentry.<서비스>.logging`, Python `app.logs`다.
 ALLOWED_INTERNAL_ROOT_SCOPES = re.compile(r"^(io\.opentelemetry\.spring-scheduling|com\.loresentry\.[a-z_]+\.logging|app\.logs)")
 
-# 흐름 밖에서 도는 DB 쿼리의 스레드(LOG_SCHEMA.md 7절 시작점). 기동(Flyway, Hibernate 검증, main 스레드)과 연결 풀이 연결을 만들 때
-# (HikariPool-*)다. 흐름이 아니라 부모가 없는 것이 맞아 C5에서 실패로 세지 않고 따로 센다. 다른 스레드의 부모 없는 DB span은 실패다.
-OUTSIDE_FLOW_DB_THREADS = re.compile(r"^(main|HikariPool-\d+[: ].*)$")
+# 흐름 밖에서 도는 DB 쿼리의 스레드(LOG_SCHEMA.md 7절 시작점). 기동(Flyway, Hibernate 검증, main 스레드), 연결 풀이 연결을 만들 때
+# (HikariPool-*), Redis 연결의 handshake(HELLO, CLIENT SETINFO)를 하는 Lettuce event loop(lettuce-*)다. 흐름이 아니라 부모가 없는
+# 것이 맞아 C5에서 실패로 세지 않고 따로 센다. 흐름 안의 Redis 명령은 같은 event loop에서 돌아도 부르는 쪽의 span을 부모로 갖는다.
+# 다른 스레드의 부모 없는 DB span은 실패다.
+OUTSIDE_FLOW_DB_THREADS = re.compile(r"^(main|HikariPool-\d+[: ].*|lettuce-.*)$")
 
 # relay 회차 span 이름. 발행·소비 span이 이 trace에 붙으면 저장된 trace를 잇지 못한 것이다(C4).
 RELAY_ROUND_NAME = re.compile(r"(?i)outbox.?relay|^outbox-relay$|^refresh-relay$")
