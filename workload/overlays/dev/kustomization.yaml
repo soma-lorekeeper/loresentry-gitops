@@ -83,13 +83,14 @@ patches:
           name: OPENAI_BASE_URL
           value: http://openai-mock/v1
   # APM: span을 EDOT Collector(logging/base/otel-collector)로 보낸다. prod overlay에는 prod 로깅 스택을 세울 때 넣는다.
-  # EDOT로 옮긴 서비스(docs APM_ARCHITECTURE.md 12절): agent의 기본값은 보내지 않음(이미지의 otel-agent.properties)이고 여기서 켠다.
+  # EDOT로 옮긴 서비스(docs APM_ARCHITECTURE.md 12절): 기본값은 보내지 않음(Java는 이미지의 otel-agent.properties, Python은
+  # 이미지의 docker-entrypoint.sh)이고 여기서 켠다.
   # resource에 환경(Kibana APM의 환경 구분), namespace, 파드 이름을 넣는다. 파드 이름은 Downward API로 받아 service.instance.id
   # (Kibana APM의 인스턴스)로도 쓴다. 같은 env 목록에서 앞에 둔 변수만 $(이름)으로 읽을 수 있어 POD_NAME·POD_NAMESPACE를 먼저 둔다.
   # service.version은 이미지의 시작 스크립트가 APP_VERSION으로 앞에 붙인다
   - target:
       kind: Deployment
-      name: (gateway-api|authentication-api|content-api)
+      name: (gateway-api|authentication-api|content-api|ai-chat-api|ai-chat-summarizer)
     patch: |-
       - op: add
         path: /spec/template/spec/containers/0/env/-
@@ -125,10 +126,10 @@ patches:
         value:
           name: OTEL_RESOURCE_ATTRIBUTES
           value: deployment.environment.name=dev,k8s.namespace.name=$(POD_NAMESPACE),k8s.pod.name=$(POD_NAME),service.instance.id=$(POD_NAME)
-  # Python은 이 주소가 있을 때만 setup_tracing이 OTLP exporter를 붙인다(/v1/traces는 exporter가 붙인다)
+  # 아직 옮기지 않은 Python 서비스: 이 주소가 있을 때만 setup_tracing이 OTLP exporter를 붙인다(/v1/traces는 exporter가 붙인다)
   - target:
       kind: Deployment
-      name: (ai-chat-api|ai-chat-summarizer|graph-rag-api)
+      name: (graph-rag-api)
     patch: |-
       - op: add
         path: /spec/template/spec/containers/0/env/-
