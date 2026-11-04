@@ -7,6 +7,8 @@
 #   - 스키마 낱말 허용 목록(@allow): 라벨, 속성 키, 결과·오류 코드, consumer 이름, 폴더 코드
 #   - 식별자: UUID, 또는 소문자 접두어와 UUID를 ':'로 이은 값(file:<uuid>, inbox:<consumer>:<uuid>:<uuid> ...)
 #   - sha256(16진수 64자리), ISO-8601 시각
+#   - W3C traceparent(00-<trace 32 hex>-<span 16 hex>-<flags 2 hex>). InboxEvent의 traceparent 속성 값이다.
+#     trace·span ID는 무작위 값이라 내용이 없고, 남겨 두면 느린 쿼리에서 그 요청의 trace로 바로 건너갈 수 있다
 # 목록에 없는 낱말은 지워지기만 하므로(내용이 새지 않음) graph-rag에 새 키가 생기면 이 목록에 더한다.
 # 따옴표 없는 숫자(sequence, limit)와 true·false는 그대로 둔다. 쿼리 원문은 어디에도 남기지 않는다.
 require "json"
@@ -17,7 +19,7 @@ def register(params)
   @allow = %w[
     File InboxEvent ProjectionState REFERENCES
     project_id title folder_code description trashed deleted origin sequence event_id payload_sha256
-    processed_at consumer_name request_id request_sha256 completion_json outbox_pending identifier receipt
+    processed_at consumer_name request_id request_sha256 completion_json outbox_pending identifier receipt traceparent
     created_at relation_id seed seed_id seed_ids target_id edge relations count
     APPLIED DUPLICATE SENT USER true false
     PROJECTION_INBOX_CONFLICT PROJECTION_PROJECT_MISMATCH PROJECTION_MISSING_FILE PROJECTION_RELATION_CONFLICT
@@ -30,6 +32,8 @@ def register(params)
   @identifier = /\A(?=.*#{uuid})#{segment}(?::#{segment})*\z/
   @sha256 = /\A[0-9a-f]{64}\z/
   @iso_time = /\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})\z/
+  # W3C traceparent version 00. graph-rag가 InboxEvent에 저장하는 trace 값(소문자 16진수만)
+  @traceparent = /\A00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}\z/
   # graph-rag literal()이 만드는 작은따옴표 리터럴: 안의 '와 \는 \로 이스케이프된다
   @literal = /'((?:[^'\\]|\\.)*)'/m
   # 다른 경로로 들어온 큰따옴표 문자열도 같은 기준으로 지운다(방어)
@@ -37,7 +41,8 @@ def register(params)
 end
 
 def keep?(value)
-  @allow.include?(value) || value.match?(@identifier) || value.match?(@sha256) || value.match?(@iso_time)
+  @allow.include?(value) || value.match?(@identifier) || value.match?(@sha256) || value.match?(@iso_time) ||
+    value.match?(@traceparent)
 end
 
 def redact(query)
