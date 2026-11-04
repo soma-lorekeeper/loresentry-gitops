@@ -1,0 +1,626 @@
+# Grafana 로그 스택 경보 규칙(docs ALERTING.md §6.5와 1:1). Grafana sidecar가 label grafana_alert: "1"인 ConfigMap을 읽는다.
+#
+# 데이터: ECK Metricbeat sidecar가 쓰는 .monitoring-*(데이터 소스 es-monitoring). event.dataset으로 구성요소·지표를 고른다.
+# 누적 카운터(thread pool 거부 수, Filebeat 실패·버림 수)는 창 안의 최댓값 - 최솟값으로 늘어난 양을 본다(재시작으로 0이 되면 음수라 울리지 않는다).
+# 라벨: namespace monitoring, service는 구성요소, pod는 노드·파드 이름. Grafana provisioning은 라벨 안의 $이름만 환경 변수로 바꾸므로
+#       라벨의 템플릿 변수는 $$labels·$$values로 적고, annotation에는 $labels·$values로 적는다.
+# 결과 없음(NoData)은 OK다. StackMonitoringDataMissing만 Alerting이다(구성요소별 0건도 결과에 남도록 terms에 min_doc_count 0을 쓴다).
+# 이 파일은 생성기로 만들었다. 규칙을 바꿀 때는 이 파일을 직접 고치면 된다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-alerting-log-stack-rules
+  labels:
+    grafana_alert: "1"
+data:
+  log-stack-rules.yaml: |
+    apiVersion: 1
+    groups:
+    - orgId: 1
+      name: loresentry-log-stack
+      folder: LoreSentry
+      interval: 1m
+      rules:
+      - uid: es-cluster-not-green
+        title: EsClusterNotGreen
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 300
+            to: 0
+          datasourceUid: es-monitoring
+          model:
+            refId: A
+            query: event.dataset:elasticsearch.cluster.stats AND NOT elasticsearch.cluster.stats.status:green
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: elasticsearch.cluster.stats.status
+              settings:
+                size: '20'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 0
+        noDataState: OK
+        execErrState: KeepLast
+        for: 5m
+        labels:
+          severity: '{{ if eq (index $$labels "elasticsearch.cluster.stats.status") "red" }}critical{{ else }}warning{{ end }}'
+          service: elasticsearch
+          namespace: monitoring
+        annotations:
+          summary: ES 클러스터 상태가 {{ index $labels "elasticsearch.cluster.stats.status" }}예요.
+          description: yellow는 배정되지 않은 사본 shard가 있다는 뜻이에요(1노드라 사본 1인 index가 생기면 그래요). red는 색인·검색이 안 되는 shard가 있어요. _cat/shards로 UNASSIGNED를 확인하세요.
+      - uid: es-jvm-heap-high
+        title: EsJvmHeapHigh
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-monitoring
+          model:
+            refId: A
+            query: event.dataset:elasticsearch.node.stats
+            metrics:
+            - id: '1'
+              type: avg
+              field: elasticsearch.node.stats.jvm.mem.heap.used.pct
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: elasticsearch.node.name
+              settings:
+                size: '20'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: mean
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 85
+        noDataState: OK
+        execErrState: KeepLast
+        for: 0s
+        labels:
+          severity: warning
+          service: elasticsearch
+          namespace: monitoring
+          pod: '{{ index $$labels "elasticsearch.node.name" }}'
+        annotations:
+          summary: ES {{ index $labels "elasticsearch.node.name" }}의 heap 사용률이 최근 10분 평균 {{ printf "%.0f" $values.B.Value }}%예요.
+          description: 오래 높으면 GC가 길어지고 색인·검색이 느려져요. 메모리 limit(heap은 그 절반)을 올리거나 쿼리·shard 수를 줄여야 해요.
+      - uid: es-thread-pool-rejections
+        title: EsThreadPoolRejections
+        condition: H
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-monitoring
+          model:
+            refId: A
+            query: event.dataset:elasticsearch.node.stats
+            metrics:
+            - id: '1'
+              type: max
+              field: elasticsearch.node.stats.thread_pool.write.rejected.count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: elasticsearch.node.name
+              settings:
+                size: '20'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-monitoring
+          model:
+            refId: B
+            query: event.dataset:elasticsearch.node.stats
+            metrics:
+            - id: '1'
+              type: max
+              field: elasticsearch.node.stats.thread_pool.search.rejected.count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: elasticsearch.node.name
+              settings:
+                size: '20'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: reduce
+            expression: A
+            reducer: max
+            settings:
+              mode: dropNN
+        - refId: D
+          datasourceUid: __expr__
+          model:
+            refId: D
+            type: reduce
+            expression: A
+            reducer: min
+            settings:
+              mode: dropNN
+        - refId: E
+          datasourceUid: __expr__
+          model:
+            refId: E
+            type: reduce
+            expression: B
+            reducer: max
+            settings:
+              mode: dropNN
+        - refId: F
+          datasourceUid: __expr__
+          model:
+            refId: F
+            type: reduce
+            expression: B
+            reducer: min
+            settings:
+              mode: dropNN
+        - refId: G
+          datasourceUid: __expr__
+          model:
+            refId: G
+            type: math
+            expression: ($C - $D) + ($E - $F)
+        - refId: H
+          datasourceUid: __expr__
+          model:
+            refId: H
+            type: threshold
+            expression: G
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 0
+        noDataState: OK
+        execErrState: KeepLast
+        for: 0s
+        labels:
+          severity: warning
+          service: elasticsearch
+          namespace: monitoring
+          pod: '{{ index $$labels "elasticsearch.node.name" }}'
+        annotations:
+          summary: ES {{ index $labels "elasticsearch.node.name" }}가 최근 10분 동안 요청을 {{ printf "%.0f" $values.G.Value }}번 거부했어요.
+          description: write·search thread pool이 가득 차 요청을 버리고 있어요. Logstash는 다시 보내므로 큐가 쌓여요. 부하나 느린 쿼리를 확인하세요.
+      - uid: es-disk-high
+        title: EsDiskHigh
+        condition: F
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-monitoring
+          model:
+            refId: A
+            query: event.dataset:elasticsearch.node.stats
+            metrics:
+            - id: '1'
+              type: min
+              field: elasticsearch.node.stats.fs.summary.available.bytes
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: elasticsearch.node.name
+              settings:
+                size: '20'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-monitoring
+          model:
+            refId: B
+            query: event.dataset:elasticsearch.node.stats
+            metrics:
+            - id: '1'
+              type: max
+              field: elasticsearch.node.stats.fs.summary.total.bytes
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: elasticsearch.node.name
+              settings:
+                size: '20'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: reduce
+            expression: A
+            reducer: last
+            settings:
+              mode: dropNN
+        - refId: D
+          datasourceUid: __expr__
+          model:
+            refId: D
+            type: reduce
+            expression: B
+            reducer: last
+            settings:
+              mode: dropNN
+        - refId: E
+          datasourceUid: __expr__
+          model:
+            refId: E
+            type: math
+            expression: (1 - $C / $D) * 100
+        - refId: F
+          datasourceUid: __expr__
+          model:
+            refId: F
+            type: threshold
+            expression: E
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 80
+        noDataState: OK
+        execErrState: KeepLast
+        for: 0s
+        labels:
+          severity: '{{ if ge $$values.E.Value 90.0 }}critical{{ else }}warning{{ end }}'
+          service: elasticsearch
+          namespace: monitoring
+          pod: '{{ index $$labels "elasticsearch.node.name" }}'
+        annotations:
+          summary: ES {{ index $labels "elasticsearch.node.name" }}의 디스크 사용률이 {{ printf "%.0f" $values.E.Value }}%예요.
+          description: ES는 85%에서 새 shard 배치를 멈추고 95%에서 index를 읽기 전용으로 바꿔 수집이 멈춰요. PVC를 늘리거나 보존 기간을 줄이세요. 90% 이상이면 critical이에요.
+      - uid: logstash-queue-backlog
+        title: LogstashQueueBacklog
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 900
+            to: 0
+          datasourceUid: es-monitoring
+          model:
+            refId: A
+            query: event.dataset:logstash.node.stats
+            metrics:
+            - id: '1'
+              type: max
+              field: logstash.node.stats.queue.events_count
+            bucketAggs:
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: min
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 10000
+        noDataState: OK
+        execErrState: KeepLast
+        for: 0s
+        labels:
+          severity: warning
+          service: logstash
+          namespace: monitoring
+        annotations:
+          summary: Logstash 디스크 큐에 최근 15분 내내 이벤트가 {{ printf "%.0f" $values.B.Value }}개 넘게 쌓여 있어요.
+          description: 출력(ES·S3)이 막혀 큐가 줄지 않아요. to-es(1GB)·to-s3(2GB) 큐가 차면 Logstash가 입력을 늦추고 로그 수집 전체가 늦어져요. Logstash 로그와 ES·S3 상태를 확인하세요.
+      - uid: filebeat-output-failures
+        title: FilebeatOutputFailures
+        condition: H
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-monitoring
+          model:
+            refId: A
+            query: event.dataset:beat.stats
+            metrics:
+            - id: '1'
+              type: max
+              field: beat.stats.libbeat.output.events.failed
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: beat.stats.beat.name
+              settings:
+                size: '20'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-monitoring
+          model:
+            refId: B
+            query: event.dataset:beat.stats
+            metrics:
+            - id: '1'
+              type: max
+              field: beat.stats.libbeat.output.events.dropped
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: beat.stats.beat.name
+              settings:
+                size: '20'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: reduce
+            expression: A
+            reducer: max
+            settings:
+              mode: dropNN
+        - refId: D
+          datasourceUid: __expr__
+          model:
+            refId: D
+            type: reduce
+            expression: A
+            reducer: min
+            settings:
+              mode: dropNN
+        - refId: E
+          datasourceUid: __expr__
+          model:
+            refId: E
+            type: reduce
+            expression: B
+            reducer: max
+            settings:
+              mode: dropNN
+        - refId: F
+          datasourceUid: __expr__
+          model:
+            refId: F
+            type: reduce
+            expression: B
+            reducer: min
+            settings:
+              mode: dropNN
+        - refId: G
+          datasourceUid: __expr__
+          model:
+            refId: G
+            type: math
+            expression: ($C - $D) + ($E - $F)
+        - refId: H
+          datasourceUid: __expr__
+          model:
+            refId: H
+            type: threshold
+            expression: G
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 0
+        noDataState: OK
+        execErrState: KeepLast
+        for: 0s
+        labels:
+          severity: warning
+          service: filebeat
+          namespace: monitoring
+          pod: '{{ index $$labels "beat.stats.beat.name" }}'
+        annotations:
+          summary: '{{ index $labels "beat.stats.beat.name" }}가 최근 10분 동안 로그 {{ printf "%.0f" $values.G.Value }}건을 보내지 못했거나 버렸어요.'
+          description: Logstash 연결이 끊겼거나 거부됐어요. 그 사이 로그가 늦거나 빠질 수 있어요. Filebeat와 Logstash 로그를 확인하세요.
+      - uid: stack-monitoring-data-missing
+        title: StackMonitoringDataMissing
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 300
+            to: 0
+          datasourceUid: es-monitoring
+          model:
+            refId: A
+            query: '*'
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: event.module
+              settings:
+                size: '20'
+                order: desc
+                orderBy: _term
+                min_doc_count: '0'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: lt
+                params:
+                - 1
+        noDataState: Alerting
+        execErrState: KeepLast
+        for: 0s
+        labels:
+          severity: warning
+          service: '{{ index $$labels "event.module" }}'
+          namespace: monitoring
+        annotations:
+          summary: '{{ index $labels "event.module" }}의 Stack Monitoring 데이터가 최근 5분 동안 없어요.'
+          description: 그 구성요소의 Metricbeat sidecar나 수집이 멈췄어요. 이 데이터가 없으면 로그 스택 경보가 모두 눈을 감아요.
