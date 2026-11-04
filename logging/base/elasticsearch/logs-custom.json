@@ -32,6 +32,19 @@
               "ignore_above": 1024
             }
           }
+        },
+        {
+          "error_stack_trace_fully_indexed": {
+            "path_match": "error.stack_trace",
+            "match_mapping_type": "string",
+            "mapping": {
+              "type": "wildcard",
+              "ignore_above": 262144,
+              "fields": {
+                "text": { "type": "match_only_text" }
+              }
+            }
+          }
         }
       ],
       "properties": {
