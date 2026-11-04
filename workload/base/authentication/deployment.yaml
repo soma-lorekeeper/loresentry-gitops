@@ -74,6 +74,15 @@ spec:
           ports:
             - name: http
               containerPort: 8000
+          # 기동이 끝날 때까지 readiness·liveness를 미룬다. EDOT Java agent가 기동 중 클래스에 계측을 붙여 기동이 dev에서 45초에서 63초로
+          # 늘었다(CPU 요청 100m). liveness(20초 뒤부터 20초마다, 3번 실패하면 재시작)만으로는 기동 중에 재시작될 수 있다. 5초마다 보고
+          # 36번(3분)까지 기다린다
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
           readinessProbe:
             httpGet:
               path: /health
