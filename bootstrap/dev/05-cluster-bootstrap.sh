@@ -93,6 +93,15 @@ if ! secret_exists monitoring grafana-admin; then
   echo "created monitoring/grafana-admin"
 fi
 
+# Grafana가 ES를 읽는 계정(역할 grafana_reader, logging/base/elasticsearch/roles.yml). ECK file realm이 이 basic-auth
+# Secret을 사용자로 넣고, Grafana도 같은 Secret에서 비밀번호를 읽는다. 없으면 Grafana가 뜨지 못한다
+if ! secret_exists monitoring logs-es-grafana-user; then
+  kc -n monitoring create secret generic logs-es-grafana-user --type=kubernetes.io/basic-auth \
+    --from-literal=username=grafana --from-literal=password="$(random_secret)" \
+    --from-literal=roles=grafana_reader >/dev/null
+  echo "created monitoring/logs-es-grafana-user"
+fi
+
 # Alertmanager가 Slack에 쓰는 bot token(xoxb-…, scope chat:write·channels:history). Slack app은 사람이 만들어야 해서
 # SLACK_BOT_TOKEN이 있을 때만 만든다. Alertmanager는 이 Secret을 필수로 마운트하므로, 없으면 Alertmanager 파드가 뜨지 못한다
 if ! secret_exists monitoring alertmanager-slack; then

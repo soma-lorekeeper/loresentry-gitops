@@ -45,6 +45,13 @@ configMapGenerator:
       - logstash/pipelines/to-s3.conf
       - logstash/pipelines/mask.rb
 
-# Kustomize는 Logstash CR 안의 ConfigMap 참조를 모르므로 해시 붙은 이름으로 바꿀 자리를 알려 준다.
+# ES 사용자 정의 역할(grafana_reader 등). 비밀값이 없지만 ECK가 Secret으로만 받는다. 이름 끝 해시로 내용이 바뀌면
+# ECK가 새 역할을 다시 읽는다(ES 재시작 없음).
+secretGenerator:
+  - name: logs-es-roles
+    files:
+      - elasticsearch/roles.yml
+
+# Kustomize는 Logstash·Elasticsearch CR 안의 ConfigMap·Secret 참조를 모르므로 해시 붙은 이름으로 바꿀 자리를 알려 준다.
 configurations:
   - kustomizeconfig.yaml

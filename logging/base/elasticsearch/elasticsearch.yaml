@@ -15,6 +15,16 @@ spec:
   # 실수로 CR을 지워도 30일치 로그가 남도록 디스크는 남기고, 지우는 건 사람이 확인한 뒤에 한다.
   volumeClaimDeletePolicy: DeleteOnScaledownOnly
 
+  # elastic 말고 용도별 계정. 역할과 사용자를 바꿔도 ES는 재시작하지 않는다(ECK가 file realm을 다시 쓰면 1~2분 안에 반영).
+  auth:
+    # 사용자 정의 역할(roles.yml, kustomization.yaml의 secretGenerator)
+    roles:
+      - secretName: logs-es-roles
+    # 사용자. kubernetes.io/basic-auth Secret(username·password·roles)이고 Git 밖에서 만든다(bootstrap/dev/05-cluster-bootstrap.sh)
+    fileRealm:
+      # Grafana가 로그·로그 스택 경보를 위해 읽는 계정(역할 grafana_reader)
+      - secretName: logs-es-grafana-user
+
   nodeSets:
     - name: default
       # 1대. 샤드 사본(replica)은 원본과 다른 노드에만 둘 수 있으므로 index template에서 0으로 둔다.
