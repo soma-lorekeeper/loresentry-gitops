@@ -4,3 +4,5 @@
 
 loadtest/.sessions*.csv
 __pycache__/
+loadtest/.loadgen*
+loadtest/results/
