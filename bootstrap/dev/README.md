@@ -150,7 +150,8 @@ DB 마스터 비밀번호는 `aws rds describe-db-instances --db-instance-identi
 - 설정 점검: 후보 수(`check_candidates`)를 주면 원문에서 인용을 잘라 후보를 만든다. 검증을 통과하므로 판정 호출까지 이어진다.
 - graph-rag: 응답 스키마의 최소 객체(변경 제안 없음)를 돌려준다. 최신화 파이프라인(S3·Kafka·Neptune 읽기)은 돈다.
 - **TPM·RPM 한도**: 모델별 토큰 버킷. 차감은 `max(max_output_tokens, 입력 추정)`(`charge=sum`이면 합). 넘으면 OpenAI와 같은
-  429(`rate_limit_exceeded`, `retry-after`)를 주고, 한도를 켜면 모든 응답에 `x-ratelimit-*` 헤더가 붙는다. 기본은 꺼짐(0).
+  429(`rate_limit_exceeded`, `retry-after`)를 주고, 한도를 켜면 모든 응답에 `x-ratelimit-*` 헤더가 붙는다. 0이면 꺼진다.
+  Deployment 기본값은 실제 `gpt-6-luna` 한도(TPM 180,000,000, RPM 30,000. 2026-11-04 응답 헤더로 확인)다.
 - 지연은 호출 종류별 로그정규 분포(중앙값, p90)다. 종류: `chat_tool`, `chat_answer`, `chat_judge`, `check_find`,
   `check_judge`, `summary`, `refresh`, `count`, `other`.
 

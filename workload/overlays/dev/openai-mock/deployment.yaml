@@ -28,9 +28,9 @@ spec:
             - name: PYTHONUNBUFFERED
               value: "1"
             - name: MOCK_TPM
-              value: "0"
+              value: "180000000"
             - name: MOCK_RPM
-              value: "0"
+              value: "30000"
             - name: MOCK_TPM_CHARGE
               value: max
             - name: MOCK_LATENCY_SCALE
