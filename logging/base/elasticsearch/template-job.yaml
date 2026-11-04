@@ -52,6 +52,22 @@ spec:
                 echo
                 echo "${kind}-otel@custom applied"
               done
+              # ES 파드의 Metricbeat sidecar(Stack Monitoring)는 Stack Monitoring 형식이 없는 ingest_pipeline 지표를
+              # metricbeat-<버전> data stream에 쓴다. sidecar가 넣는 template은 레플리카 1·삭제 없는 ILM이라 1노드 ES가
+              # yellow가 되고 wave 2가 멈춘다. 더 높은 우선순위 template으로 레플리카 0·보존 3일(.monitoring-*와 같음)을 정하고,
+              # 이미 있는 data stream에도 맞춘다(처음 만들 때는 아직 없으므로 실패해도 넘어간다).
+              curl -sf "${auth[@]}" -X PUT "${es}/_index_template/metricbeat-sidecar" \
+                -H 'Content-Type: application/json' \
+                -d '{"index_patterns":["metricbeat-*"],"data_stream":{},"priority":500,"template":{"settings":{"index.number_of_replicas":0,"index.lifecycle.prefer_ilm":false},"lifecycle":{"data_retention":"3d"}}}'
+              echo
+              curl -sf "${auth[@]}" -X PUT "${es}/metricbeat-*/_settings?expand_wildcards=all" \
+                -H 'Content-Type: application/json' \
+                -d '{"index":{"number_of_replicas":0,"lifecycle.prefer_ilm":false}}' || echo "no metricbeat indices yet"
+              echo
+              curl -sf "${auth[@]}" -X PUT "${es}/_data_stream/metricbeat-*/_lifecycle" \
+                -H 'Content-Type: application/json' -d '{"data_retention":"3d"}' || echo "no metricbeat data stream yet"
+              echo
+              echo "metricbeat-sidecar template applied"
           env:
             # ECK가 만든 elastic 계정 비밀번호.
             - name: ELASTIC_PASSWORD
