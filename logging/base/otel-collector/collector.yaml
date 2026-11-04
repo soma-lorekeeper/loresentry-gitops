@@ -1,0 +1,119 @@
+# EDOT Collector gateway. 서비스 6개가 OTLP로 보내는 span을 받아 민감한 값을 지우고 ES(traces·metrics·logs의 *.otel-*)에 쓴다.
+# Kibana APM 화면(서비스 목록·트랜잭션·trace 폭포 그림)이 그 데이터를 읽는다. 설정은 otel.yml(configMapGenerator).
+# 앱이 span을 보내는 설정(OTEL_EXPORTER_OTLP_ENDPOINT 등)은 workload 쪽에서 따로 켠다. 그 전에는 받을 것이 없어 조용하다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edot-collector
+  labels:
+    app.kubernetes.io/name: edot-collector
+  annotations:
+    # wave 2: template Job(wave 1)이 traces·metrics @custom template을 넣은 뒤에 뜬다.
+    # 첫 data stream이 레플리카 0으로 만들어져야 1노드 ES가 yellow가 되지 않는다.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  # 1대. 잠시 멈춰도 앱 SDK가 보내기를 다시 시도하고, 그래도 못 보낸 span은 버린다(앱은 영향 없음).
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: edot-collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: edot-collector
+    spec:
+      # 로깅 전용 노드에 ES·Logstash와 함께 둔다.
+      nodeSelector:
+        role: logging
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: logging
+          effect: NoSchedule
+      securityContext:
+        # 이미지 사용자(elastic-agent)가 이름으로만 지정돼 있어 runAsNonRoot 확인을 위해 uid를 적는다.
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+      containers:
+        - name: collector
+          # ES·Kibana와 같은 9.5.5. elastic-agent 이미지를 ELASTIC_AGENT_OTEL=true로 띄우면 EDOT Collector로 돈다(공식 문서 방식).
+          image: docker.elastic.co/elastic-agent/elastic-agent:9.5.5
+          args: ["--config=/etc/edot/otel.yml"]
+          env:
+            - name: ELASTIC_AGENT_OTEL
+              value: "true"
+            # bootstrap/dev/09-apm-key.sh가 만든 쓰기 전용 API key. Secret이 없으면 파드는 만들어질 때까지 기다린다.
+            - name: ELASTIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: edot-collector-es
+                  key: api_key
+            # Go 런타임이 컨테이너 한도 안에서 메모리를 돌려주고 CPU 한도만큼만 스레드를 쓰게 한다.
+            - name: GOMEMLIMIT
+              value: 400MiB
+            - name: GOMAXPROCS
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.cpu
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: otlp-http
+              containerPort: 4318
+            - name: health
+              containerPort: 13133
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          # 로깅 노드의 CPU 예약이 빠듯해(2026-11 기준 83%) 요청은 작게 둔다. dev 트래픽 기준이며 6단계에서 실측해 맞춘다.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/edot
+              readOnly: true
+            - name: es-ca
+              mountPath: /etc/es-ca
+              readOnly: true
+      volumes:
+        # otel.yml. kustomization의 configMapGenerator가 만든다. 내용이 바뀌면 이름 해시가 바뀌어 파드가 새로 뜬다.
+        - name: config
+          configMap:
+            name: edot-collector-config
+        # ES HTTPS 인증서를 믿기 위한 CA. ECK가 만든다.
+        - name: es-ca
+          secret:
+            secretName: logs-es-http-certs-public
+---
+# 앱이 span을 보내는 주소: edot-collector.monitoring.svc:4317(gRPC) 또는 :4318(HTTP).
+apiVersion: v1
+kind: Service
+metadata:
+  name: edot-collector
+  labels:
+    app.kubernetes.io/name: edot-collector
+spec:
+  selector:
+    app.kubernetes.io/name: edot-collector
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+      appProtocol: grpc
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
