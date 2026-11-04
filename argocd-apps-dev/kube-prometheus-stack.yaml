@@ -109,7 +109,9 @@ spec:
                     # 같은 묶음의 반복·추가·해소는 처음 메시지를 고친다(진단 답글이 그 메시지 스레드에 달린다)
                     update_message: true
                     message_text: '{{ template "lore.slack.message_text" . }}'
-                    title: ""
+                    # 비워 두면 Operator가 빈 값을 빼서 Alertmanager 기본 제목(클러스터 안 주소로 링크)이 들어가므로 직접 정한다
+                    title: '{{ template "lore.slack.title" . }}'
+                    title_link: '{{ template "lore.slack.title_link" . }}'
                     text: '{{ template "lore.slack.text" . }}'
                     color: '{{ template "lore.slack.color" . }}'
                     fallback: '{{ template "lore.slack.headline" . }}'
@@ -127,8 +129,18 @@ spec:
               {{/* 첫 줄: [CRITICAL|WARNING|RESOLVED] 경보 이름 · namespace/service.
                    kps 기본 규칙은 service에 수집기 이름(kps-kube-state-metrics 등)이 붙어 오므로 namespace만 쓴다 */}}
               {{ define "lore.slack.headline" -}}
-              [{{ if eq .Status "resolved" }}RESOLVED{{ else }}{{ .CommonLabels.severity | toUpper }}{{ end }}] {{ .CommonLabels.alertname }} · {{ with .CommonLabels.namespace }}{{ . }}{{ else }}-{{ end }}
-              {{- with .CommonLabels.service }}{{ if not (match "^(kps-|kube-prometheus-stack-|argocd-)" .) }}/{{ . }}{{ end }}{{ end }}
+              [{{ if eq .Status "resolved" }}RESOLVED{{ else }}{{ .CommonLabels.severity | toUpper }}{{ end }}] {{ .CommonLabels.alertname }}
+              {{- with .CommonLabels.namespace }} · {{ . }}
+              {{- with $.CommonLabels.service }}{{ if not (match "^(kps-|kube-prometheus-stack-|argocd-)" .) }}/{{ . }}{{ end }}{{ end }}
+              {{- end }}
+              {{- end }}
+
+              {{/* 막대 제목: 묶음 공통 summary(없으면 경보 이름). 누르면 Grafana 경보 목록이 열린다 */}}
+              {{ define "lore.slack.title" -}}
+              {{ with .CommonAnnotations.summary }}{{ . }}{{ else }}{{ .CommonLabels.alertname }}{{ end }}
+              {{- end }}
+              {{ define "lore.slack.title_link" -}}
+              https://grafana-dev.loresentry.com/alerting/list?search={{ .CommonLabels.alertname }}
               {{- end }}
 
               {{/* 메시지 본문 줄(알림 미리보기에도 쓰인다). 울리는 중인 critical만 @channel을 붙인다.
@@ -145,16 +157,17 @@ spec:
               {{- with .Labels.node }} · node {{ . }}{{ end }}
               {{- end }}
 
-              {{/* 막대 안 본문: 경보마다 summary와 시각(KST)·라벨, 그다음 링크, 끝줄 fp.
+              {{/* 막대 안 본문: 공통 description, 경보마다 시각(KST)·라벨(공통 summary가 없으면 경보별 summary도), 링크, 끝줄 fp.
                    경보가 많으면 앞의 10건만 적는다(Slack 글자 수 한도). fp는 진단 서비스가 이 메시지를 찾는 열쇠다 */}}
               {{ define "lore.slack.text" -}}
+              {{ with .CommonAnnotations.description }}{{ . }}
+              {{ end -}}
               {{ range $i, $a := .Alerts }}{{ if lt $i 10 -}}
-              • {{ with $a.Annotations.summary }}{{ . }}{{ else }}{{ with $a.Annotations.description }}{{ . }}{{ else }}{{ $a.Labels.alertname }}{{ end }}{{ end }}
-                  시작 {{ $a.StartsAt | tz "Asia/Seoul" | date "01-02 15:04" }}{{ if eq $a.Status "resolved" }} · 해소 {{ $a.EndsAt | tz "Asia/Seoul" | date "15:04" }}{{ end }} KST{{ template "lore.slack.labels" $a }}
+              • {{ if not $.CommonAnnotations.summary }}{{ with $a.Annotations.summary }}{{ . }} · {{ end }}{{ end }}시작 {{ $a.StartsAt | tz "Asia/Seoul" | date "01-02 15:04" }}{{ if eq $a.Status "resolved" }} · 해소 {{ $a.EndsAt | tz "Asia/Seoul" | date "15:04" }}{{ end }} KST{{ template "lore.slack.labels" $a }}
               {{ end }}{{ end -}}
               {{ if gt (len .Alerts) 10 }}(총 {{ len .Alerts }}건 중 10건만 표시)
               {{ end -}}
-              <https://grafana-dev.loresentry.com/alerting/list?search={{ .CommonLabels.alertname }}|Grafana 경보> · <https://grafana-dev.loresentry.com/alerting/silence/new?alertmanager=alertmanager&matcher=alertname%3D{{ .CommonLabels.alertname }}{{ with .CommonLabels.namespace }}&matcher=namespace%3D{{ . }}{{ end }}|silence 만들기>
+              <https://grafana-dev.loresentry.com/alerting/silence/new?alertmanager=alertmanager&matcher=alertname%3D{{ .CommonLabels.alertname }}{{ with .CommonLabels.namespace }}&matcher=namespace%3D{{ . }}{{ end }}|silence 만들기>
               {{- with .CommonAnnotations.runbook_url }} · <{{ . }}|runbook>{{ end }}
               {{- with .CommonAnnotations.kibana_url }} · <{{ . }}|Kibana 로그>{{ end }}
               fp: {{ range $i, $a := .Alerts }}{{ if lt $i 10 }}{{ if $i }} {{ end }}{{ $a.Fingerprint }}{{ end }}{{ end }}
