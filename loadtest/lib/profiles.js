@@ -1,6 +1,6 @@
 import exec from "k6/execution";
 
-export const MIX = parseMix(__ENV.MIX || "0.9,0.1");
+export const MIX = parseMix(__ENV.MIX || "0.7,0.3");
 
 const SLO = {
   read: "p(95)<300",
