@@ -1,5 +1,5 @@
 # EDOT Collector gateway 설정. 서비스 6개가 OTLP로 보낸 span을 받아 민감한 값을 지우고 ES에 쓴다.
-# 흐름: otlp 수신 → memory_limiter → tail_sampling(빈 폴링·성공한 헬스체크 trace 버리기) → filter/genai-content(대화 내용 event 떼기)
+# 흐름: otlp 수신 → memory_limiter → tail_sampling(빈 폴링·성공한 헬스체크·Redis 연결 handshake trace 버리기) → filter/genai-content(대화 내용 event 떼기)
 #       → transform/privacy(지우기·가리기) → batch → elasticapm(APM 필드 보강) → ES
 #       elasticapm connector가 span으로 서비스·트랜잭션 집계 지표를 만들어 같은 ES에 쓴다(Kibana APM 화면이 읽는다).
 # 규칙은 docs 저장소 LOG_SCHEMA.md 4절 "trace 마스킹"과 같다. 바꾸면 그 문서도 같은 시점에 고친다.
@@ -72,6 +72,21 @@ processors:
                   - 'IsRootSpan() and IsMatch(attributes["url.path"], "^/health(/.*)?$$") and attributes["http.response.status_code"] < 400'
                   - 'IsRootSpan() and IsMatch(attributes["http.target"], "^/health(/.*)?$$") and attributes["http.status_code"] < 400'
                   - 'IsRootSpan() and IsMatch(attributes["uri"], "^/health(/.*)?$$") and IsMatch(attributes["status"], "^[123][0-9][0-9]$$")'
+      # Redis 연결 handshake. Lettuce는 연결을 열 때 event loop 스레드에서 AUTH·HELLO·CLIENT SETINFO·CLIENT MAINT_NOTIFICATIONS·SELECT를
+      # 보낸다. 부르는 쪽 문맥 밖이라 부모 없는 CLIENT span 하나짜리 trace가 되고, 흐름이 아니다(LOG_SCHEMA.md 7절 "흐름 밖 DB 쿼리").
+      # gateway는 세션을 확인할 때마다 연결을 새로 열어 인증된 요청 하나마다 이런 trace가 4개쯤 생기고, Valkey가 모르는 명령(MAINT_NOTIFICATIONS)은
+      # ERROR가 되어 APM 오류율·목록을 덮는다. 로그도 handshake를 남기지 않으므로 버린다. 흐름 안의 Redis 명령(GET, EVAL 등)은 부르는 쪽 span을
+      # 부모로 가져 root가 아니므로 걸리지 않는다. 연결이 실패하면 그것을 부른 쪽의 `valkey call`·`redis call` span과 결과 줄이 남는다.
+      - name: drop-redis-connection-handshake
+        type: drop
+        drop:
+          drop_sub_policy:
+            - name: redis-handshake-root
+              type: ottl_condition
+              ottl_condition:
+                error_mode: ignore
+                span:
+                  - 'IsRootSpan() and kind == SPAN_KIND_CLIENT and (attributes["db.system.name"] == "redis" or attributes["db.system"] == "redis") and IsMatch(name, "^(AUTH|HELLO|CLIENT|SELECT)( |$$)")'
       - name: keep-everything-else
         type: always_sample
 
