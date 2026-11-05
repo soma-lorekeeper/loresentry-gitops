@@ -176,12 +176,17 @@ processors:
   #   - Kafka 클라이언트 지표: Java kafka-clients 계측이 Kafka client의 내부 지표 90여 종을 그대로 옮긴다(2026-11-05 dev에서 content
   #     혼자 10분에 문서 258개, JVM 지표의 약 4배). 발행·가져오기 지연과 밀림·발행 오류만 남긴다. 소비 밀림 건수는 Prometheus(Kafka
   #     exporter)에도 있고, 메시지가 늦게 처리된 시간은 앱의 loresentry.kafka.consume.delay가 잰다.
+  #   - Python psycopg 계측의 DB 명령 지연(db.client.operation.duration): 계측이 버킷 경계를 정하지 않아 SDK 기본 경계(0, 5, 10, 25 …
+  #     ms용)를 쓴다. 값은 초라 거의 모든 명령(2~4ms)이 첫 칸(0~5)에 들어가 p95가 늘 2.5로 나온다(2026-11-05 dev). 지연을 계산할 수
+  #     없으므로 버린다. ai-chat의 DB 지연은 span으로 만든 APM 집계(metrics-service_destination, Kibana Dependencies)로 본다.
+  #     Java JDBC 계측의 같은 이름 지표는 경계가 맞아 남긴다(scope 이름으로 가린다).
   filter/metric-noise:
     error_mode: ignore
     metrics:
       metric:
         - 'IsMatch(name, "^http\\.(server|client)\\.(request|response)\\.body\\.size$$")'
         - 'IsMatch(name, "^kafka\\.(consumer|producer)\\.") and not IsMatch(name, "^kafka\\.(consumer\\.(fetch_latency_avg|records_lag_max)|producer\\.(request_latency_avg|record_error_rate))$$")'
+        - 'name == "db.client.operation.duration" and instrumentation_scope.name == "opentelemetry.instrumentation.psycopg"'
 
   # 앱 지표 datapoint 속성의 두 번째 방어선. 계측은 경로 템플릿(http.route)과 대상 주소(server.address)만 담고 실제 경로·
   # 쿼리스트링은 담지 않는다(2026-11-05 EDOT Java 1.14.0·Python 1.19.0 로컬 확인). 담기는 일이 생기면 여기서 지우고,
