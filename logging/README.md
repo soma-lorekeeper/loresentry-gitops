@@ -18,7 +18,7 @@ logging/
 │   │   ├── elasticsearch.yaml    ES 1노드 (wave 0)
 │   │   ├── logs-custom.json      logs@custom component template — 필드 타입, 보존 30일, 레플리카 0
 │   │   ├── traces-otel-custom.json   traces-otel@custom — span(traces-*.otel-*) 보존 30일, 레플리카 0
-│   │   ├── metrics-otel-custom.json  metrics-otel@custom — APM 집계 지표(metrics-*.otel-*) 보존 30일, 레플리카 0
+│   │   ├── metrics-otel-custom.json  metrics-otel@custom — APM 집계·앱 지표(metrics-*.otel-*) 보존 30일, 레플리카 0
 │   │   └── template-job.yaml     *-custom.json을 ES에 넣는 Sync Job (wave 1)
 │   ├── kibana/
 │   │   └── kibana.yaml           Kibana (wave 2)
@@ -94,18 +94,20 @@ IngressClassParams `loadBalancerAttributes`), prod는 콘솔에서 한다.
 
 ## APM (EDOT Collector)
 
-서비스가 OTLP로 보낸 span을 EDOT Collector(`otel-collector/`) 1대가 받아 ES에 쓰고, Kibana APM 화면이 읽는다. span은
-Logstash를 거치지 않으므로 민감한 값은 collector가 처리한다(`otel.yml`의 `transform/privacy`, LOG_SCHEMA 4절 "trace 마스킹").
+서비스가 OTLP로 보낸 span과 앱 지표를 EDOT Collector(`otel-collector/`) 1대가 받아 ES에 쓰고, Kibana APM 화면이 읽는다.
+span과 지표는 Logstash를 거치지 않으므로 민감한 값은 collector가 처리한다(`otel.yml`의 `transform/privacy`·`transform/metric-privacy`,
+LOG_SCHEMA 4절 "trace 마스킹").
 
 | 항목 | 값 |
 | --- | --- |
 | 받는 주소 | `edot-collector.monitoring.svc:4317`(gRPC), `:4318`(HTTP). 앱 쪽 전송 설정은 workload overlay에서 켠다. EDOT로 옮긴 서비스(Java의 gateway·authentication·content, Python의 ai-chat-api·ai-chat-summarizer·graph-rag-api)는 `OTEL_TRACES_EXPORTER=otlp`·`OTEL_EXPORTER_OTLP_ENDPOINT`·`OTEL_EXPORTER_OTLP_PROTOCOL`과, Downward API의 파드 이름·namespace를 넣은 `OTEL_RESOURCE_ATTRIBUTES`(`deployment.environment.name`, `k8s.namespace.name`, `k8s.pod.name`, `service.instance.id`)다. 기본값(보내지 않음, 계측 범위)은 서비스 이미지에 있다(Java는 `otel-agent.properties`, Python은 `docker-entrypoint.sh`). |
 | 버리는 trace | `tail_sampling`의 `drop` 정책이 두 가지 trace를 자식 span까지 통째로 버리고, 나머지 trace는 모두 남긴다. 판단을 위해 trace를 5초 모았다가 내보낸다. (1) 빈 폴링 회차: 앱이 할 일 없던 회차의 span에 `loresentry.polling.idle=true`를 단다. (2) 성공한 헬스체크: root span이 `/health`·`/health/**` 요청이고 응답이 400 미만이다. 속성 이름이 세 가지(OpenTelemetry 안정 이름 `url.path`·`http.response.status_code`, Python 옛 이름 `http.target`·`http.status_code`, Micrometer `uri`·`status`)라 조건도 세 줄이다. 실패한 헬스체크는 남는다. (3) Redis 연결 handshake: 부모 없는 Redis CLIENT span 중 이름이 `AUTH`·`HELLO`·`CLIENT`·`SELECT`로 시작하는 것(Lettuce가 연결을 열 때 event loop에서 보낸다). 흐름 안의 Redis 명령은 부모가 있어 걸리지 않는다 |
-| 쓰는 곳 | `traces-*.otel-*`(span), `logs-*.otel-*`(예외 event = APM 오류), `metrics-*.otel-*`(connector가 만든 서비스·트랜잭션 집계, 1m·10m·60m) |
+| 쓰는 곳 | `traces-*.otel-*`(span), `logs-*.otel-*`(예외 event = APM 오류), `metrics-*.otel-*`(connector가 만든 서비스·트랜잭션 집계 1m·10m·60m, 앱이 보낸 지표) |
+| 앱 지표 | `metrics` 파이프라인. 앱 쪽 전송은 workload overlay의 `OTEL_METRICS_EXPORTER=otlp`가 켠다(trace와 같은 주소). Java·Python SDK가 delta로 보내 값은 그대로 쓰고, 쓰지 않는 HTTP 본문 크기 histogram(`http.{server,client}.{request,response}.body.size`)만 `filter/metric-noise`가 버린다. 지표 이름과 켜는 곳은 docs ALERTING.md 7절 |
 | 보존·레플리카 | 30일, 0. traces·metrics는 `*-otel-custom.json`, logs는 `logs-custom.json`이 정한다. 내장 ILM 정책은 삭제 단계가 없어 `prefer_ilm: false`로 data stream lifecycle을 쓴다 |
 | ES 계정 | API key(이름 `edot-collector`), Secret `edot-collector-es`. `*.otel-*` data stream 만들기·쓰기(`auto_configure`, `create_doc`)만 되고 읽기와 앱 로그 쓰기는 안 된다. dev는 `bootstrap/dev/09-apm-key.sh`가 만든다 |
-| 지우는 값 | URL 쿼리(`url.full`·`url.original`·`http.url`·`http.target`의 `?` 뒤, `url.query`), SQL과 Redis 명령(`db.statement`·`db.query.text`), 예외 메시지·스택(`exception.message`·`exception.stacktrace`), 계측 span의 상태 메시지(`status.message`, 예외 문자열. 로깅 팩토리 span의 이유 코드는 남는다), S3 객체 키(AWS SDK span(`rpc.system: aws-api`)과 S3 주소를 직접 부른 HTTP span의 `url.full`·`url.path`·`http.url`·`http.target`, 모든 span의 `aws.s3.key`·`aws.s3.copy_source`), GenAI 대화 내용(`gen_ai.prompt`·`gen_ai.completion`과 번호 붙은 키, `gen_ai.input.messages`·`gen_ai.output.messages`·`gen_ai.system_instructions`·`gen_ai.tool.call.arguments`·`gen_ai.tool.call.result`, 이름이 `gen_ai.`로 시작하는 span event는 `filter/genai-content`가 뗀다) |
-| 가리는 값 | 남은 모든 span·event 문자열 속성에 `mask.rb`와 같은 규칙(이메일, OAuth `code`·`state`, 광고 클릭 ID, 서명 URL, 세션 쿠키, 인증 헤더, JWT, `PASSWORD '…'`, `Key (…)=(…)`) |
+| 지우는 값 | 앱 지표: datapoint 속성의 `url.full`·`url.path`·`url.query`·`http.target`·`http.url`(계측은 담지 않는다. 두 번째 방어선). span: URL 쿼리(`url.full`·`url.original`·`http.url`·`http.target`의 `?` 뒤, `url.query`), SQL과 Redis 명령(`db.statement`·`db.query.text`), 예외 메시지·스택(`exception.message`·`exception.stacktrace`), 계측 span의 상태 메시지(`status.message`, 예외 문자열. 로깅 팩토리 span의 이유 코드는 남는다), S3 객체 키(AWS SDK span(`rpc.system: aws-api`)과 S3 주소를 직접 부른 HTTP span의 `url.full`·`url.path`·`http.url`·`http.target`, 모든 span의 `aws.s3.key`·`aws.s3.copy_source`), GenAI 대화 내용(`gen_ai.prompt`·`gen_ai.completion`과 번호 붙은 키, `gen_ai.input.messages`·`gen_ai.output.messages`·`gen_ai.system_instructions`·`gen_ai.tool.call.arguments`·`gen_ai.tool.call.result`, 이름이 `gen_ai.`로 시작하는 span event는 `filter/genai-content`가 뗀다) |
+| 가리는 값 | 앱 지표의 문자열 속성에는 이메일 규칙. 남은 모든 span·event 문자열 속성에 `mask.rb`와 같은 규칙(이메일, OAuth `code`·`state`, 광고 클릭 ID, 서명 URL, 세션 쿠키, 인증 헤더, JWT, `PASSWORD '…'`, `Key (…)=(…)`) |
 | 자원 | 요청 100m·256Mi, 한도 500m·512Mi. span 전송을 켠 뒤 실측해 맞춘다 |
 
 - collector 정규식은 Go RE2라 lookahead가 없다. 이메일 규칙은 `mask.rb`와 달리 클러스터 안 주소(`0@…svc`)도 `[email]`로 가리고,

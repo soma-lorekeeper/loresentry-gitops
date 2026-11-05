@@ -1,7 +1,9 @@
-# EDOT Collector gateway 설정. 서비스 6개가 OTLP로 보낸 span을 받아 민감한 값을 지우고 ES에 쓴다.
-# 흐름: otlp 수신 → memory_limiter → tail_sampling(빈 폴링·성공한 헬스체크·Redis 연결 handshake trace 버리기) → filter/genai-content(대화 내용 event 떼기)
+# EDOT Collector gateway 설정. 서비스 6개가 OTLP로 보낸 span과 앱 지표를 받아 민감한 값을 지우고 ES에 쓴다.
+# 흐름(span): otlp 수신 → memory_limiter → tail_sampling(빈 폴링·성공한 헬스체크·Redis 연결 handshake trace 버리기) → filter/genai-content(대화 내용 event 떼기)
 #       → transform/privacy(지우기·가리기) → batch → elasticapm(APM 필드 보강) → ES
 #       elasticapm connector가 span으로 서비스·트랜잭션 집계 지표를 만들어 같은 ES에 쓴다(Kibana APM 화면이 읽는다).
+# 흐름(앱 지표): otlp 수신 → memory_limiter → filter/metric-noise(쓰지 않는 계열 버리기) → transform/metric-privacy → batch/metrics → ES
+#       metrics-*.otel-*에 쌓여 Kibana APM 서비스의 Metrics 탭·앱 지표 대시보드와 Grafana 앱 경보(loresentry-app)가 읽는다.
 # 규칙은 docs 저장소 LOG_SCHEMA.md 4절 "trace 마스킹"과 같다. 바꾸면 그 문서도 같은 시점에 고친다.
 # 이 파일 안에서 `$`는 환경 변수 치환 표시라, 정규식 치환의 `${1}`은 `$${1}`로 적는다.
 
@@ -11,7 +13,8 @@ extensions:
     endpoint: 0.0.0.0:13133
 
 receivers:
-  # 앱은 OTLP로 span만 보낸다(logs는 Filebeat → Logstash, 지표는 Prometheus가 따로 모은다).
+  # 앱은 OTLP로 span과 앱 지표(JVM·런타임·HTTP·DB 풀·우리 지표)를 보낸다. 로그는 Filebeat → Logstash가 따로 모은다.
+  # 지표는 dev overlay가 OTEL_METRICS_EXPORTER=otlp로 켠 환경에서만 온다(docs ALERTING.md 7절).
   otlp:
     protocols:
       grpc:
@@ -167,6 +170,34 @@ processors:
   # span에 Kibana APM이 쓰는 필드(transaction·span 구분, 이름 등)를 더한다. 집계 connector보다 앞에 있어야 한다.
   elasticapm: {}
 
+  # 앱 지표 중 화면·경보 어디에서도 보지 않는 계열을 버린다. HTTP 요청·응답 본문 크기 histogram은 Java(실험 HTTP 지표)·Python
+  # 계측이 지연 histogram과 함께 경로·상태 코드별로 내서, 남기면 저장 공간만 지연 histogram만큼 더 쓴다.
+  filter/metric-noise:
+    error_mode: ignore
+    metrics:
+      metric:
+        - 'IsMatch(name, "^http\\.(server|client)\\.(request|response)\\.body\\.size$$")'
+
+  # 앱 지표 datapoint 속성의 두 번째 방어선. 계측은 경로 템플릿(http.route)과 대상 주소(server.address)만 담고 실제 경로·
+  # 쿼리스트링은 담지 않는다(2026-11-05 EDOT Java 1.14.0·Python 1.19.0 로컬 확인). 담기는 일이 생기면 여기서 지우고,
+  # 남은 문자열 속성(우리 지표의 topic 이름 등)에 든 이메일은 span과 같은 규칙으로 가린다.
+  transform/metric-privacy:
+    error_mode: ignore
+    metric_statements:
+      - context: datapoint
+        statements:
+          - 'delete_key(datapoint.attributes, "url.full")'
+          - 'delete_key(datapoint.attributes, "url.path")'
+          - 'delete_key(datapoint.attributes, "url.query")'
+          - 'delete_key(datapoint.attributes, "http.target")'
+          - 'delete_key(datapoint.attributes, "http.url")'
+          - 'replace_all_patterns(datapoint.attributes, "value", "[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*\\.[A-Za-z]{2,}", "[email]")'
+
+  # 앱 지표는 요청 하나를 쪼개지 않고 그대로 묶어 보낸다(Elastic 공식 gateway 예시 값. 쪼개면 같은 시각의 계열이 여러 요청으로 나뉜다).
+  batch/metrics:
+    send_batch_max_size: 0
+    timeout: 1s
+
 exporters:
   elasticsearch/otel:
     endpoints: ["https://logs-es-http.monitoring.svc:9200"]
@@ -186,6 +217,11 @@ service:
       receivers: [otlp]
       processors: [memory_limiter, tail_sampling, filter/genai-content, transform/privacy, batch, elasticapm]
       exporters: [elasticapm, elasticsearch/otel]
+    # 앱 지표. 앱이 보낸 값을 그대로 쓰고(Java·Python SDK가 delta로 보내 cumulativetodelta는 필요 없다), 쓰지 않는 계열만 거른다.
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/metric-noise, transform/metric-privacy, batch/metrics]
+      exporters: [elasticsearch/otel]
     # connector가 만든 집계 지표. 이미 계산된 값이라 다른 processor를 거치지 않는다.
     metrics/aggregated-otel-metrics:
       receivers: [elasticapm]
