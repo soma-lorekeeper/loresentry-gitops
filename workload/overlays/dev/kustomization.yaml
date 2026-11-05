@@ -82,7 +82,8 @@ patches:
         value:
           name: OPENAI_BASE_URL
           value: http://openai-mock/v1
-  # APM: span을 EDOT Collector(logging/base/otel-collector)로 보낸다. prod overlay에는 prod 로깅 스택을 세울 때 넣는다.
+  # APM: span과 앱 지표를 EDOT Collector(logging/base/otel-collector)로 보낸다. prod overlay에는 prod 로깅 스택을 세울 때 넣는다.
+  # 앱 지표(JVM·런타임·HTTP·DB 풀·outbox 등, docs ALERTING.md 7절)는 span과 같은 주소·프로토콜로 1분마다 간다.
   # EDOT로 옮긴 서비스(docs APM_ARCHITECTURE.md 12절): 기본값은 보내지 않음(Java는 이미지의 otel-agent.properties, Python은
   # 이미지의 docker-entrypoint.sh)이고 여기서 켠다.
   # resource에 환경(Kibana APM의 환경 구분), namespace, 파드 이름을 넣는다. 파드 이름은 Downward API로 받아 service.instance.id
@@ -110,6 +111,11 @@ patches:
         path: /spec/template/spec/containers/0/env/-
         value:
           name: OTEL_TRACES_EXPORTER
+          value: otlp
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: OTEL_METRICS_EXPORTER
           value: otlp
       - op: add
         path: /spec/template/spec/containers/0/env/-
