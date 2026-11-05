@@ -61,7 +61,7 @@ if (!PROFILE) {
   throw new Error(`unknown PROFILE ${PROFILE_NAME}; one of ${Object.keys(PROFILES).join(", ")}`);
 }
 
-const BOUNDS = PROFILE.stages.reduce((acc, [duration, , phase]) => {
+export const BOUNDS = PROFILE.stages.reduce((acc, [duration, , phase]) => {
   const start = acc.length ? acc[acc.length - 1].end : 0;
   acc.push({ phase, start, end: start + seconds(duration) });
   return acc;
@@ -73,8 +73,8 @@ export function phase() {
   return bound ? bound.phase : "ramp-down";
 }
 
-export function phaseSeconds(name) {
-  return BOUNDS.filter((b) => b.phase === name).reduce((sum, b) => sum + b.end - b.start, 0);
+export function phaseSeconds(name, until = Infinity) {
+  return BOUNDS.filter((b) => b.phase === name).reduce((sum, b) => sum + Math.max(0, Math.min(b.end, until) - b.start), 0);
 }
 
 export function scenarios(execs) {

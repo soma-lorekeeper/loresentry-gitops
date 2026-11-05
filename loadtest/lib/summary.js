@@ -1,5 +1,5 @@
 import { textSummary } from "https://jslib.k6.io/k6-summary/0.1.0/index.js";
-import { MIX, PROFILE_NAME, RECORD_ONLY, phaseSeconds } from "./profiles.js";
+import { BOUNDS, MIX, PROFILE_NAME, RECORD_ONLY, phaseSeconds } from "./profiles.js";
 
 export function summarize(data, extra = {}) {
   const phases = {};
@@ -7,7 +7,7 @@ export function summarize(data, extra = {}) {
     const match = /^http_reqs\{phase:([^}]+)\}$/.exec(key);
     if (!match) continue;
     const name = match[1];
-    const span = phaseSeconds(name);
+    const span = phaseSeconds(name, data.state.testRunDurationMs / 1000);
     phases[name] = {
       seconds: span,
       requests: metric.values.count,
@@ -28,10 +28,13 @@ export function summarize(data, extra = {}) {
       thresholds[`${key} ${expr}`] = result.ok && measured;
     }
   }
+  const finished = new Date();
   const record = {
     profile: PROFILE_NAME,
     mix: { writer: MIX[0], reader: MIX[1] },
-    finished_at: new Date().toISOString(),
+    started_at: new Date(finished.getTime() - data.state.testRunDurationMs).toISOString(),
+    finished_at: finished.toISOString(),
+    bounds: BOUNDS,
     passed: Object.values(thresholds).every(Boolean),
     thresholds,
     phases,

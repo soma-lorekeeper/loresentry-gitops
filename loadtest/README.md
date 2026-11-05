@@ -11,6 +11,7 @@
 | `workload.js` | 집필 사용자와 읽기 사용자를 섞어 부하를 준다. `PROFILE`로 테스트 유형을 고른다 |
 | `smoke.js` | 환경 확인용. 계정 조회 → 프로젝트 → 파일 트리 → 관계 그래프 반복 |
 | `loadgen.sh` | 부하 발생기 EC2를 만들고, k6를 돌리고, 대시보드를 열고, 지운다 |
+| `report.py` | 테스트 한 번의 서버 쪽 지표(ALB·앱 로그·파드·노드·RDS·Kafka)를 모아 HTML 보고서를 만든다 |
 | `lib/` | 요청·프로파일·결과 요약 공통 코드 |
 
 ## 1. 테스트 사용자 만들기
@@ -95,7 +96,9 @@ jar에 넣는다. 헤더까지 넣으면 같은 쿠키가 두 번 실려 BFF가 
 SLO: 읽기(문서 열기·파일 트리) p95 < 300ms, 저장 p95 < 500ms, 실패율 < 0.1%. 요청마다 `phase` 태그(구간 이름)와
 `slo` 태그(`read`·`save`·`other`)가 붙고, threshold는 판정 구간만 본다.
 
-결과는 `results/<프로파일>-<시각>.json`에 구간별 요청 수·RPS·p95·p99·실패율·threshold 판정으로 남는다.
+결과는 `results/<프로파일>-<시각>.json`에 구간별 요청 수·RPS·p95·p99·실패율·threshold 판정으로 남는다. 시작 시각
+(`started_at`)과 구간 경계(`bounds`)도 함께 남아 `report.py`가 그대로 쓴다. 중간에 멈춘 실행의 RPS는 실제로 돈 시간으로
+나눈다.
 
 ## 5. 부하 발생기와 대시보드 (`loadgen.sh`)
 
@@ -116,14 +119,45 @@ loadtest/loadgen.sh down                       # EC2·보안 그룹·키 삭제.
   `results/*.html`로 남는다.
 - 키(`.loadgen.pem`)와 결과(`results/`)는 Git에 올라가지 않는다.
 
-## 6. 볼 곳
+## 6. 지표 보고서 (`report.py`)
+
+테스트가 끝나면 서버 쪽 지표를 모아 테스트별 폴더에 남긴다. Prometheus는 15일만 보관하므로 그 안에 만든다.
+
+```bash
+loadtest/loadgen.sh fetch
+python3 loadtest/report.py <docs 저장소>/test/results/T1-3차 \
+  --k6 loadtest/results/average-<시각>.json --k6-html loadtest/results/average-<시각>.html
+python3 loadtest/report.py <폴더> --render-only     # metrics.json에서 HTML만 다시 만든다
+```
+
+폴더에는 `k6-summary.json`, `k6-report.html`, `metrics.json`(모은 값 전체), `report.html`이 생긴다. 스크립트가
+`kubectl port-forward`로 Elasticsearch와 Prometheus에 붙고, CloudWatch는 `AWS_PROFILE`(기본 `lorekeeper`)로 읽는다.
+k6 JSON에 `started_at`이 없는 예전 결과는 `--start 2026-11-04T06:51:57Z --phases ramp=3m,steady=20m,ramp-down=2m`처럼
+시각을 넘긴다. 시작 시각은 ALB 로그에서 `Grafana k6/1.0.0`의 첫 요청으로 확인한다.
+
+| 보고서 항목 | 출처 |
+|---|---|
+| 구간별 핵심 지표 (요청, 5xx, p95, CPU·throttling·메모리, 노드 CPU, RDS, Kafka lag, 로그 양, 발생기 CPU) | 아래 전부 |
+| 실패한 요청이 content까지 갔는지 (gateway 요청의 `trace.id`로 content 요청 로그를 찾는다) | 앱 로그 |
+| 첫 5xx 전후 10초 단위 요청 수·p95·최대 응답 시간 | 앱 로그 |
+| 응답 상태·`error.type`별 건수와 지연, 경고·오류 로그, 엔드포인트별 지연 | 앱 로그 `RequestLogFilter` |
+| ALB 상태별 요청·p95 | ALB 액세스 로그, CloudWatch |
+| 파드 CPU·throttling·메모리, 노드 CPU, 파드 배치·이미지·교체 여부 | Prometheus (cAdvisor, kube-state-metrics) |
+| RDS CPU·연결 수·여유 메모리·스왑·디스크 지연·CPU 크레딧, 1초 넘은 쿼리 | CloudWatch, RDS 로그 |
+| Kafka consumer lag | Prometheus (kafka-exporter) |
+| 부하 발생기 CPU | CloudWatch EC2 (5분 단위) |
+
+## 7. 볼 곳
 
 | 지표 | 위치 |
 |---|---|
 | 클라이언트 지연·실패율 | k6 대시보드, 결과 JSON |
+| 서버 지표 모음 | `report.py` 보고서 |
 | ALB 요청 수·지연·5xx | CloudWatch `AWS/ApplicationELB`, 로드밸런서 `k8s-loresentrydev-...` |
 | Pod·노드 CPU·메모리, Kafka | `https://grafana-dev.loresentry.com` |
 | RDS CPU·CPU 크레딧·연결 수 | CloudWatch `AWS/RDS`, `lore-sentry-dev-postgres` |
-| 로그 | Kibana `https://kibana-dev.loresentry.com`, `kubernetes.namespace: dev` |
+| 로그 | Kibana `https://kibana-dev.loresentry.com`, 데이터 뷰 `LoreSentry 앱 로그 (dev)` |
+| trace | Kibana APM (2026-11-04 09:39 UTC부터) |
 
-앱 자체의 HTTP 지표(ServiceMonitor)와 Hikari 지표는 아직 없다. 엔드포인트별 서버 지연은 ALB와 k6로 본다.
+앱 자체의 HTTP 지표(ServiceMonitor)와 Hikari 지표는 아직 없다. 엔드포인트별 서버 지연은 앱 요청 로그의
+`event.duration`으로 본다.
