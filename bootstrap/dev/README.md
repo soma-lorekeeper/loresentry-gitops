@@ -11,7 +11,7 @@
 | EKS | v1.36, 인증 모드 `API`, endpoint public+private, 서비스 CIDR `172.20.0.0/16`, 클러스터·노드 역할 |
 | 노드 | `r7i.large` ×3 (min 2 / max 4), AL2023 `1.36.3-20260827`, 50GiB, node repair. **2a 1대 / 2b 2대** |
 | 애드온 | vpc-cni·coredns·kube-proxy·ebs-csi·pod-identity-agent·metrics-server·node-monitoring-agent, 버전 고정 |
-| RDS | PG 18.6 `db.t4g.micro`, gp3 20GB, Single-AZ **2b**, 기본 파라미터 그룹, 마스터 비밀번호는 Secrets Manager, 논리 DB 3개·서비스 역할·`CONNECT` 차단 |
+| RDS | PG 18.6 `db.t4g.medium`, gp3 20GB, Single-AZ **2b**, 기본 파라미터 그룹, 마스터 비밀번호는 Secrets Manager, 논리 DB 3개·서비스 역할·`CONNECT` 차단 |
 | Neptune | 1.4.8.0 `db.t4g.medium` writer 1대 **2b**, 기본 파라미터 그룹 |
 | 클러스터 안 | Argo CD v3.5.2, LBC 3.5.0, Strimzi 1.2.0 / Kafka 4.3.1(브로커 3대, 토픽 10개), kube-prometheus-stack, Telepresence — 차트 버전과 values가 prod와 같다. 로그 수집은 ELK(`logging/`) |
 | 워크로드 | `workload/base` 그대로. 이미지 태그·replica·리소스 request/limit 모두 prod와 같다 |
