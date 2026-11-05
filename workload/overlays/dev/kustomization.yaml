@@ -90,7 +90,7 @@ patches:
   # service.version은 이미지의 시작 스크립트가 APP_VERSION으로 앞에 붙인다
   - target:
       kind: Deployment
-      name: (gateway-api|authentication-api|content-api|ai-chat-api|ai-chat-summarizer)
+      name: (gateway-api|authentication-api|content-api|ai-chat-api|ai-chat-summarizer|graph-rag-api)
     patch: |-
       - op: add
         path: /spec/template/spec/containers/0/env/-
@@ -126,21 +126,6 @@ patches:
         value:
           name: OTEL_RESOURCE_ATTRIBUTES
           value: deployment.environment.name=dev,k8s.namespace.name=$(POD_NAMESPACE),k8s.pod.name=$(POD_NAME),service.instance.id=$(POD_NAME)
-  # 아직 옮기지 않은 Python 서비스: 이 주소가 있을 때만 setup_tracing이 OTLP exporter를 붙인다(/v1/traces는 exporter가 붙인다)
-  - target:
-      kind: Deployment
-      name: (graph-rag-api)
-    patch: |-
-      - op: add
-        path: /spec/template/spec/containers/0/env/-
-        value:
-          name: OTEL_EXPORTER_OTLP_ENDPOINT
-          value: http://edot-collector.monitoring.svc:4318
-      - op: add
-        path: /spec/template/spec/containers/0/env/-
-        value:
-          name: OTEL_RESOURCE_ATTRIBUTES
-          value: deployment.environment.name=dev
   - target:
       kind: Deployment
       name: (gateway-api|authentication-api)
