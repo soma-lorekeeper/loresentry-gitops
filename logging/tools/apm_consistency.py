@@ -92,6 +92,10 @@ REQUIRED_RESOURCE = ["service.name", "service.version", "service.instance.id", "
 # (Python 스케줄·폴링 회차, 시작할 때 도는 작업)이다. 로깅 팩토리의 tracer 이름은 Java `com.loresentry.<서비스>.logging`, Python `app.logs`다.
 ALLOWED_INTERNAL_ROOT_SCOPES = re.compile(r"^(io\.opentelemetry\.spring-scheduling|com\.loresentry\.[a-z_]+\.logging|app\.logs)")
 
+# 로깅 팩토리 tracer의 scope 이름(ES regexp, 전체 일치). 이 span의 상태 메시지는 우리 이유 코드(error.type)라 남고, 다른 계측 span의
+# 상태 메시지(예외 문자열)는 collector가 지운다(C9).
+LOGGING_FACTORY_SCOPES_ES = r"com\.loresentry\.[a-z_]+\.logging|app\.logs"
+
 # 흐름 밖에서 도는 DB 쿼리의 스레드(LOG_SCHEMA.md 7절 시작점). 기동(Flyway, Hibernate 검증, main 스레드), 연결 풀이 연결을 만들 때
 # (HikariPool-*), Redis 연결의 handshake(HELLO, CLIENT SETINFO)를 하는 Lettuce event loop(lettuce-*)다. 흐름이 아니라 부모가 없는
 # 것이 맞아 C5에서 실패로 세지 않고 따로 센다. 흐름 안의 Redis 명령은 같은 event loop에서 돌아도 부르는 쪽의 span을 부모로 갖는다.
@@ -638,6 +642,12 @@ def check_c9(es, window, services, sample):
                                                     {"exists": {"field": "attributes.url.full"}}]}})
     if aws_url:
         found["AWS span url.full"] = aws_url
+    # 계측 라이브러리 span의 상태 메시지는 예외 문자열이라 collector가 지운다. 로깅 팩토리 span의 메시지(이유 코드)만 남는다
+    status_message = es.count(TRACES, {"bool": {"filter": [window, svc_filter, {"exists": {"field": "status.message"}}],
+                                                "must_not": [{"term": {"status.message": ""}},
+                                                             {"regexp": {"scope.name": LOGGING_FACTORY_SCOPES_ES}}]}})
+    if status_message:
+        found["계측 span status.message"] = status_message
     for key in FORBIDDEN_ERROR_ATTRIBUTES:
         n = es.count(OTEL_LOGS, {"bool": {"filter": [window, svc_filter, {"exists": {"field": f"attributes.{key}"}}]}})
         if n:

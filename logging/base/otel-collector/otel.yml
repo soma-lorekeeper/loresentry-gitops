@@ -127,6 +127,10 @@ processors:
           - 'delete_key(span.attributes, "http.target") where span.attributes["rpc.system"] == "aws-api" or IsMatch(span.attributes["server.address"], "(^|\\.)s3[.-]")'
           - 'delete_key(span.attributes, "aws.s3.key")'
           - 'delete_key(span.attributes, "aws.s3.copy_source")'
+          # span 상태 메시지. 계측 라이브러리는 예외로 끝난 span에 예외 문자열을 넣는다(Python SDK는 "<종류>: <메시지>", botocore는
+          # AWS 오류 메시지). DB 오류 메시지에는 키 값(Key (col)=(value))이 들어갈 수 있어 예외 메시지처럼 지운다. 상태 코드(ERROR)는
+          # 남는다. 로깅 팩토리가 연 span(Java com.loresentry.<서비스>.logging, Python app.logs)의 메시지는 우리 이유 코드(error.type)라 남긴다.
+          - 'set(span.status.message, "") where not IsMatch(instrumentation_scope.name, "^(com\\.loresentry\\.[a-z_]+\\.logging|app\\.logs)$$")'
           # GenAI 대화 내용 속성: 프롬프트·응답(옛 이름 gen_ai.prompt.0.content 같은 번호 붙은 키 포함), 입력·출력 메시지,
           # 시스템 지시, 도구 호출 인자·결과. 모델 이름(gen_ai.request.model)과 토큰 수(gen_ai.usage.*)는 남는다.
           - 'delete_matching_keys(span.attributes, "^gen_ai\\.((prompt|completion)(\\..*)?|input\\.messages|output\\.messages|system_instructions|tool\\.call\\.(arguments|result))$$")'
