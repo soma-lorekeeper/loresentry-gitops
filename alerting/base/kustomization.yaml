@@ -12,6 +12,8 @@ resources:
   - grafana/log-rules.yaml
   # Grafana 로그 스택 경보 규칙 7개(docs ALERTING.md §6.5, Stack Monitoring 데이터)
   - grafana/log-stack-rules.yaml
+  # Grafana 앱 지표 경보 규칙 12개(docs ALERTING.md §6.6, EDOT agent가 보낸 앱 지표)
+  - grafana/app-rules.yaml
 
 # Grafana 대시보드. Grafana의 dashboard sidecar가 label grafana_dashboard인 ConfigMap을 읽어 올린다.
 # Grafana DB는 emptyDir이라 화면에서 만든 대시보드는 재시작하면 사라지므로, 대시보드는 여기 JSON으로만 둔다(docs ALERTING.md §9).
