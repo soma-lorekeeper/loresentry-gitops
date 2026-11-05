@@ -170,13 +170,18 @@ processors:
   # span에 Kibana APM이 쓰는 필드(transaction·span 구분, 이름 등)를 더한다. 집계 connector보다 앞에 있어야 한다.
   elasticapm: {}
 
-  # 앱 지표 중 화면·경보 어디에서도 보지 않는 계열을 버린다. HTTP 요청·응답 본문 크기 histogram은 Java(실험 HTTP 지표)·Python
-  # 계측이 지연 histogram과 함께 경로·상태 코드별로 내서, 남기면 저장 공간만 지연 histogram만큼 더 쓴다.
+  # 앱 지표 중 화면·경보 어디에서도 보지 않는 계열을 버린다.
+  #   - HTTP 요청·응답 본문 크기 histogram: Java(실험 HTTP 지표)·Python 계측이 지연 histogram과 함께 경로·상태 코드별로 내서,
+  #     남기면 저장 공간만 지연 histogram만큼 더 쓴다.
+  #   - Kafka 클라이언트 지표: Java kafka-clients 계측이 Kafka client의 내부 지표 90여 종을 그대로 옮긴다(2026-11-05 dev에서 content
+  #     혼자 10분에 문서 258개, JVM 지표의 약 4배). 발행·가져오기 지연과 밀림·발행 오류만 남긴다. 소비 밀림 건수는 Prometheus(Kafka
+  #     exporter)에도 있고, 메시지가 늦게 처리된 시간은 앱의 loresentry.kafka.consume.delay가 잰다.
   filter/metric-noise:
     error_mode: ignore
     metrics:
       metric:
         - 'IsMatch(name, "^http\\.(server|client)\\.(request|response)\\.body\\.size$$")'
+        - 'IsMatch(name, "^kafka\\.(consumer|producer)\\.") and not IsMatch(name, "^kafka\\.(consumer\\.(fetch_latency_avg|records_lag_max)|producer\\.(request_latency_avg|record_error_rate))$$")'
 
   # 앱 지표 datapoint 속성의 두 번째 방어선. 계측은 경로 템플릿(http.route)과 대상 주소(server.address)만 담고 실제 경로·
   # 쿼리스트링은 담지 않는다(2026-11-05 EDOT Java 1.14.0·Python 1.19.0 로컬 확인). 담기는 일이 생기면 여기서 지우고,
