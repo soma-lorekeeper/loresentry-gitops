@@ -64,7 +64,8 @@ EXPECTED_DEPENDENCIES = {
     "content-api": ["request", "db:postgresql", "aws:S3", "aws:KMS", "messaging:publish", "messaging:process", "schedule"],
     "ai-chat-api": ["request", "http", "db:postgresql", "aws:KMS", "genai"],
     "ai-chat-summarizer": ["messaging:process", "db:postgresql", "aws:KMS", "genai", "schedule"],
-    "graph-rag-api": ["request", "http", "aws:S3", "aws:KMS", "genai", "messaging:process", "messaging:publish", "schedule"],
+    # graph-rag가 받는 HTTP 요청은 probe(`/`, `/health`, `/health/db`)뿐이고 성공한 헬스체크 trace는 collector가 버려 request는 기대하지 않는다
+    "graph-rag-api": ["http", "aws:S3", "aws:KMS", "genai", "messaging:process", "messaging:publish", "schedule"],
 }
 
 # span 종류별 표준 속성. 안정 이름과 옛 이름이 다르면 둘 중 하나가 있으면 된다(튜플). `이름=값`은 그 속성이 그 값일 때만 있다고 본다.
