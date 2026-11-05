@@ -158,6 +158,15 @@ patches:
                 env:
                   - name: SPRING_DATASOURCE_HIKARI_MAXIMUMPOOLSIZE
                     value: "10"
+                  - name: LOGGING_LEVEL_COM_LORESENTRY_CONTENT_DOCUMENT
+                    value: WARN
+                  - name: LOGGING_LEVEL_COM_LORESENTRY_CONTENT_EVENT
+                    value: WARN
+                  - name: LOGGING_LEVEL_COM_LORESENTRY_CONTENT_PROJECT
+                    value: WARN
+                resources:
+                  limits:
+                    cpu: "1"
   - target:
       kind: Deployment
       name: gateway-api
@@ -176,6 +185,12 @@ patches:
                     value: "50"
                   - name: LORESENTRY_HTTP_MAX_CONNECTIONS_PER_ROUTE
                     value: "10"
+                  - name: LOGGING_LEVEL_COM_LORESENTRY_GATEWAY_SECURITY
+                    value: WARN
+                  - name: LOGGING_LEVEL_COM_LORESENTRY_GATEWAY_APPLICATION
+                    value: WARN
+                  - name: LOGGING_LEVEL_COM_LORESENTRY_GATEWAY_WEB
+                    value: WARN
   - target:
       kind: ConfigMap
       name: manuscript-key
