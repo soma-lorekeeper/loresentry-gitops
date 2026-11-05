@@ -345,8 +345,9 @@ spec:
               secureJsonData:
                 basicAuthPassword: $ES_GRAFANA_PASSWORD
                 tlsCACert: $__file{/etc/grafana/es-ca/ca.crt}
-            # 앱 지표(JVM·런타임·HTTP·DB 풀·outbox 등). 서비스의 EDOT agent → EDOT Collector가 쓰는 metrics-*.otel-*를
-            # 앱 경보(loresentry-app)가 읽는다. trace로 만든 APM 집계 지표(metrics-service_transaction 등)도 같은 index 이름에 있다
+            # 앱 지표(JVM·런타임·HTTP·DB 풀·outbox 등). 서비스의 EDOT agent → EDOT Collector가 쓰는 metrics-generic.otel-*를
+            # 앱 경보(loresentry-app)가 읽는다. trace로 만든 APM 집계 지표(metrics-service_transaction 등)는 넣지 않는다. 거기에는
+            # 시험용 서비스(edot-smoke-test) 같은 이름도 남아 있어, 서비스별 지표 끊김 경보(AppMetricsMissing)가 그 이름으로 울린다
             - name: Elasticsearch app metrics
               uid: es-app-metrics
               type: elasticsearch
@@ -355,7 +356,7 @@ spec:
               basicAuth: true
               basicAuthUser: grafana
               jsonData:
-                index: "metrics-*.otel-*"
+                index: "metrics-generic.otel-*"
                 timeField: "@timestamp"
                 tlsAuthWithCACert: true
               secureJsonData:

@@ -1,0 +1,1177 @@
+# Grafana 앱 지표 경보 규칙(docs ALERTING.md §6.6과 1:1). Grafana sidecar가 label grafana_alert: "1"인 ConfigMap을 읽는다.
+#
+# 데이터: 서비스의 EDOT agent → EDOT Collector가 쓰는 앱 지표 metrics-generic.otel-*(데이터 소스 es-app-metrics, docs ALERTING.md 7절).
+# 지연 histogram은 ES percentiles로 p95·p99를 내고, count는 _doc_count(관측 수 = 요청 수)를 센다. 1분 칸마다 계산해 창 안의 평균·합으로 줄인다.
+# 라벨: namespace dev, service는 서비스 이름, pod·route·target·topic·partition은 규칙마다. Grafana provisioning은 라벨 안의 $이름만 환경 변수로
+#       바꾸므로 라벨의 템플릿 변수는 $$labels·$$values로 적고, annotation에는 $labels·$values로 적는다.
+# 결과 없음(NoData)은 OK다(오류·지연이 없으면 결과가 비어 있다). AppMetricsMissing만 Alerting이다(서비스별 0건도 결과에 남도록 terms에
+# min_doc_count 0을 쓴다. index에 남은 서비스 이름을 기준으로 하므로, 서비스를 없애면 30일 동안 이 경보가 울린다).
+# 기준값은 2026-11-05 dev 평소 값으로 정했다. 부하 테스트 뒤 다시 본다.
+# 이 파일은 생성기로 만들었다. 규칙을 바꿀 때는 이 파일을 직접 고치면 된다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-alerting-app-rules
+  labels:
+    grafana_alert: "1"
+data:
+  app-rules.yaml: |
+    apiVersion: 1
+    groups:
+    - orgId: 1
+      name: loresentry-app
+      folder: LoreSentry
+      interval: 1m
+      rules:
+      - uid: app-metrics-missing
+        title: AppMetricsMissing
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: A
+            query: '*'
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '0'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: lt
+                params:
+                - 1
+        noDataState: Alerting
+        execErrState: KeepLast
+        for: 0s
+        labels:
+          namespace: dev
+          severity: warning
+          service: '{{ index $$labels "resource.attributes.service.name" }}'
+        annotations:
+          summary: '{{ index $labels "resource.attributes.service.name" }}의 앱 지표가 최근 10분 동안 하나도 들어오지 않았어요.'
+          description: 그 서비스의 agent가 지표를 보내지 못하거나(EDOT Collector 장애, 전송 설정) 파드가 모두 내려갔어요. 이 지표가 없으면 앱 지표 경보가 모두 눈을 감아요. collector 로그와 파드 상태를 확인하세요.
+      - uid: app-high-5xx-ratio
+        title: AppHigh5xxRatio
+        condition: F
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 300
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: A
+            query: _exists_:metrics.http.server.request.duration AND attributes.http.response.status_code:>=500 AND NOT attributes.http.route:\/health*
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          relativeTimeRange:
+            from: 300
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: B
+            query: _exists_:metrics.http.server.request.duration AND NOT attributes.http.route:\/health*
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: reduce
+            expression: A
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: D
+          datasourceUid: __expr__
+          model:
+            refId: D
+            type: reduce
+            expression: B
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: E
+          datasourceUid: __expr__
+          model:
+            refId: E
+            type: math
+            expression: $C / $D * 100
+        - refId: F
+          datasourceUid: __expr__
+          model:
+            refId: F
+            type: math
+            expression: $E > 5 && $C >= 5
+        noDataState: OK
+        execErrState: KeepLast
+        for: 5m
+        labels:
+          namespace: dev
+          severity: '{{ if and (gt $$values.E.Value 20.0) (ge $$values.C.Value 20.0) }}critical{{ else }}warning{{ end }}'
+          service: '{{ index $$labels "resource.attributes.service.name" }}'
+        annotations:
+          summary: '{{ index $labels "resource.attributes.service.name" }}의 최근 5분 요청 중 {{ printf "%.1f" $values.E.Value }}%({{ printf "%.0f" $values.C.Value }}건)가 5xx예요.'
+          description: 서버 쪽 오류가 늘었어요. 5% 넘고 5건 이상이면 warning, 20% 넘고 20건 이상이면 critical이에요. 같은 시각의 AppErrorLogs와 trace(Kibana APM 오류)를 보세요.
+      - uid: app-latency-p95-high
+        title: AppLatencyP95High
+        condition: E
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: A
+            query: _exists_:metrics.http.server.request.duration AND NOT attributes.http.route:\/health* AND NOT attributes.http.route:*\/chat\/sessions\/*\/messages* AND NOT attributes.http.route:\/projects\/sample*
+            metrics:
+            - id: '1'
+              type: percentiles
+              field: metrics.http.server.request.duration
+              settings:
+                percents:
+                - '95'
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: attributes.http.route
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: B
+            query: _exists_:metrics.http.server.request.duration AND NOT attributes.http.route:\/health* AND NOT attributes.http.route:*\/chat\/sessions\/*\/messages* AND NOT attributes.http.route:\/projects\/sample*
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: attributes.http.route
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: reduce
+            expression: A
+            reducer: mean
+            settings:
+              mode: dropNN
+        - refId: D
+          datasourceUid: __expr__
+          model:
+            refId: D
+            type: reduce
+            expression: B
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: E
+          datasourceUid: __expr__
+          model:
+            refId: E
+            type: math
+            expression: $C > 1 && $D >= 30
+        noDataState: OK
+        execErrState: KeepLast
+        for: 5m
+        labels:
+          namespace: dev
+          severity: warning
+          service: '{{ index $$labels "resource.attributes.service.name" }}'
+          route: '{{ index $$labels "attributes.http.route" }}'
+        annotations:
+          summary: '{{ index $labels "resource.attributes.service.name" }} {{ index $labels "attributes.http.route" }}의 최근 10분 p95가 {{ printf "%.2f" $values.C.Value }}초예요({{ printf "%.0f" $values.D.Value }}건).'
+          description: 기준은 1초이고, 10분에 30건(초당 0.05건) 넘는 경로만 봐요. LLM 채팅 경로와 /projects/sample은 원래 오래 걸려 빼요. 느린 trace(Kibana APM)와 DB·외부 호출 지연(DbLatencyHigh·DependencyLatencyHigh)을 함께 보세요.
+      - uid: app-latency-p99-high
+        title: AppLatencyP99High
+        condition: E
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: A
+            query: _exists_:metrics.http.server.request.duration AND NOT attributes.http.route:\/health* AND NOT attributes.http.route:*\/chat\/sessions\/*\/messages* AND NOT attributes.http.route:\/projects\/sample*
+            metrics:
+            - id: '1'
+              type: percentiles
+              field: metrics.http.server.request.duration
+              settings:
+                percents:
+                - '99'
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: attributes.http.route
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: B
+            query: _exists_:metrics.http.server.request.duration AND NOT attributes.http.route:\/health* AND NOT attributes.http.route:*\/chat\/sessions\/*\/messages* AND NOT attributes.http.route:\/projects\/sample*
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: attributes.http.route
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: reduce
+            expression: A
+            reducer: mean
+            settings:
+              mode: dropNN
+        - refId: D
+          datasourceUid: __expr__
+          model:
+            refId: D
+            type: reduce
+            expression: B
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: E
+          datasourceUid: __expr__
+          model:
+            refId: E
+            type: math
+            expression: $C > 2.5 && $D >= 30
+        noDataState: OK
+        execErrState: KeepLast
+        for: 5m
+        labels:
+          namespace: dev
+          severity: warning
+          service: '{{ index $$labels "resource.attributes.service.name" }}'
+          route: '{{ index $$labels "attributes.http.route" }}'
+        annotations:
+          summary: '{{ index $labels "resource.attributes.service.name" }} {{ index $labels "attributes.http.route" }}의 최근 10분 p99가 {{ printf "%.2f" $values.C.Value }}초예요({{ printf "%.0f" $values.D.Value }}건).'
+          description: 기준은 2.5초이고, 10분에 30건(초당 0.05건) 넘는 경로만 봐요. LLM 채팅 경로와 /projects/sample은 원래 오래 걸려 빼요. 느린 trace(Kibana APM)와 DB·외부 호출 지연(DbLatencyHigh·DependencyLatencyHigh)을 함께 보세요.
+      - uid: jvm-heap-high
+        title: JvmHeapHigh
+        condition: F
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: A
+            query: attributes.jvm.memory.type:heap
+            metrics:
+            - id: '1'
+              type: sum
+              field: metrics.jvm.memory.used_after_last_gc
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: resource.attributes.k8s.pod.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: B
+            query: attributes.jvm.memory.type:heap
+            metrics:
+            - id: '1'
+              type: sum
+              field: metrics.jvm.memory.limit
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: resource.attributes.k8s.pod.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: reduce
+            expression: A
+            reducer: mean
+            settings:
+              mode: dropNN
+        - refId: D
+          datasourceUid: __expr__
+          model:
+            refId: D
+            type: reduce
+            expression: B
+            reducer: mean
+            settings:
+              mode: dropNN
+        - refId: E
+          datasourceUid: __expr__
+          model:
+            refId: E
+            type: math
+            expression: $C / $D * 100
+        - refId: F
+          datasourceUid: __expr__
+          model:
+            refId: F
+            type: threshold
+            expression: E
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 90
+        noDataState: OK
+        execErrState: KeepLast
+        for: 10m
+        labels:
+          namespace: dev
+          severity: warning
+          service: '{{ index $$labels "resource.attributes.service.name" }}'
+          pod: '{{ index $$labels "resource.attributes.k8s.pod.name" }}'
+        annotations:
+          summary: '{{ index $labels "resource.attributes.k8s.pod.name" }}의 GC 직후 heap이 최대치의 {{ printf "%.0f" $values.E.Value }}%예요(최근 10분 평균).'
+          description: GC가 회수하고도 남는 양이 최대치에 가까워요. 곧 GC가 쉬지 않고 돌다가 OutOfMemoryError가 나요(파드는 죽지 않고 요청만 실패할 수 있어요). Kibana 앱 지표 · Java 대시보드의 heap 추이를 보고, 계속 오르면 누수, 평평하면 메모리 limit을 올리세요.
+      - uid: jvm-gc-time-high
+        title: JvmGcTimeHigh
+        condition: D
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: A
+            query: _exists_:metrics.jvm.gc.duration
+            metrics:
+            - id: '1'
+              type: sum
+              field: metrics.jvm.gc.duration
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: resource.attributes.k8s.pod.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $B / 600 * 100
+        - refId: D
+          datasourceUid: __expr__
+          model:
+            refId: D
+            type: threshold
+            expression: C
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 10
+        noDataState: OK
+        execErrState: KeepLast
+        for: 5m
+        labels:
+          namespace: dev
+          severity: warning
+          service: '{{ index $$labels "resource.attributes.service.name" }}'
+          pod: '{{ index $$labels "resource.attributes.k8s.pod.name" }}'
+        annotations:
+          summary: '{{ index $labels "resource.attributes.k8s.pod.name" }}가 최근 10분 중 {{ printf "%.1f" $values.C.Value }}%를 GC에 썼어요.'
+          description: 이 서비스들은 CPU 1개 이하라 JVM이 Serial GC를 써요. GC 동안 요청이 모두 멈춰서 지연이 그만큼 늘어요. heap이 모자라거나 할당이 많은 요청이 몰렸어요. JvmHeapHigh와 heap 추이를 함께 보세요.
+      - uid: db-pool-pending
+        title: DbPoolPending
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 300
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: A
+            query: _exists_:metrics.db.client.connection.pending_requests
+            metrics:
+            - id: '1'
+              type: max
+              field: metrics.db.client.connection.pending_requests
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: resource.attributes.k8s.pod.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: min
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 0
+        noDataState: OK
+        execErrState: KeepLast
+        for: 5m
+        labels:
+          namespace: dev
+          severity: warning
+          service: '{{ index $$labels "resource.attributes.service.name" }}'
+          pod: '{{ index $$labels "resource.attributes.k8s.pod.name" }}'
+        annotations:
+          summary: '{{ index $labels "resource.attributes.k8s.pod.name" }}에서 DB 연결을 기다리는 요청이 최근 5분 내내 있었어요(최소 {{ printf "%.0f" $values.B.Value }}개).'
+          description: 연결 풀이 모자라요. 느린 쿼리가 연결을 오래 쥐고 있거나 요청이 몰렸어요. DbLatencyHigh와 Kibana 앱 지표 대시보드의 DB 연결 풀을 보세요(Java HikariCP, Python psycopg 풀).
+      - uid: outbox-backlog
+        title: OutboxBacklog
+        condition: E
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 300
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: A
+            query: _exists_:metrics.loresentry.outbox.oldest_age
+            metrics:
+            - id: '1'
+              type: max
+              field: metrics.loresentry.outbox.oldest_age
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          relativeTimeRange:
+            from: 300
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: B
+            query: _exists_:metrics.loresentry.outbox.relay.last_run_age
+            metrics:
+            - id: '1'
+              type: max
+              field: metrics.loresentry.outbox.relay.last_run_age
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: reduce
+            expression: A
+            reducer: last
+            settings:
+              mode: dropNN
+        - refId: D
+          datasourceUid: __expr__
+          model:
+            refId: D
+            type: reduce
+            expression: B
+            reducer: last
+            settings:
+              mode: dropNN
+        - refId: E
+          datasourceUid: __expr__
+          model:
+            refId: E
+            type: math
+            expression: $C > 300 || $D > 300
+        noDataState: OK
+        execErrState: KeepLast
+        for: 5m
+        labels:
+          namespace: dev
+          severity: warning
+          service: '{{ index $$labels "resource.attributes.service.name" }}'
+        annotations:
+          summary: '{{ index $labels "resource.attributes.service.name" }} outbox의 가장 오래된 미발행 행이 {{ printf "%.0f" $values.C.Value }}초, relay 마지막 회차가 {{ printf "%.0f" $values.D.Value }}초 전이에요.'
+          description: 이벤트가 Kafka로 나가지 못해 다른 서비스가 바뀐 것을 모르고 있어요. 행이 오래됐으면 Kafka·발행 실패(relay 로그의 OUTBOX_SEND_FAILED), relay 마지막 회차가 오래됐으면 스케줄러가 멈춘 거예요. 기준은 둘 다 5분이에요.
+      - uid: event-loop-lag-high
+        title: EventLoopLagHigh
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 300
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: A
+            query: _exists_:metrics.loresentry.event_loop.lag
+            metrics:
+            - id: '1'
+              type: percentiles
+              field: metrics.loresentry.event_loop.lag
+              settings:
+                percents:
+                - '95'
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: resource.attributes.k8s.pod.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: mean
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 0.5
+        noDataState: OK
+        execErrState: KeepLast
+        for: 5m
+        labels:
+          namespace: dev
+          severity: warning
+          service: '{{ index $$labels "resource.attributes.service.name" }}'
+          pod: '{{ index $$labels "resource.attributes.k8s.pod.name" }}'
+        annotations:
+          summary: '{{ index $labels "resource.attributes.k8s.pod.name" }}의 asyncio event loop가 최근 5분 p95 {{ printf "%.2f" $values.B.Value }}초씩 막혔어요.'
+          description: 루프 하나가 모든 요청을 처리하므로, 막힌 만큼 모든 요청이 늦어져요. 동기 코드(블로킹 I/O, 무거운 계산)가 루프에서 돌고 있어요. 그 시각의 느린 trace를 보세요.
+      - uid: kafka-consume-delay-high
+        title: KafkaConsumeDelayHigh
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: A
+            query: _exists_:metrics.loresentry.kafka.consume.delay
+            metrics:
+            - id: '1'
+              type: percentiles
+              field: metrics.loresentry.kafka.consume.delay
+              settings:
+                percents:
+                - '95'
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: attributes.messaging.destination.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '12'
+              type: terms
+              field: attributes.messaging.destination.partition.id
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+                missing: '-'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            refId: B
+            type: reduce
+            expression: A
+            reducer: mean
+            settings:
+              mode: dropNN
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: threshold
+            expression: B
+            conditions:
+            - evaluator:
+                type: gt
+                params:
+                - 300
+        noDataState: OK
+        execErrState: KeepLast
+        for: 10m
+        labels:
+          namespace: dev
+          severity: warning
+          service: '{{ index $$labels "resource.attributes.service.name" }}'
+          topic: '{{ index $$labels "attributes.messaging.destination.name" }}'
+          partition: '{{ index $$labels "attributes.messaging.destination.partition.id" }}'
+        annotations:
+          summary: '{{ index $labels "resource.attributes.service.name" }}가 {{ index $labels "attributes.messaging.destination.name" }} partition {{ index $labels "attributes.messaging.destination.partition.id" }}의 메시지를 발행 {{ printf "%.0f" $values.B.Value }}초 뒤에야 처리하고 있어요(최근 10분 p95).'
+          description: 소비가 밀려 바뀐 내용이 늦게 반영돼요(graph-rag면 그래프·검색 최신화). 이 값은 처리를 시작할 때 재므로, partition이 아예 멈추면 값이 없고 Prometheus KafkaConsumerGroupLagHigh가 대신 울려요. 처리 시간(messaging.process.duration)과 소비자 로그를 보세요.
+      - uid: dependency-latency-high
+        title: DependencyLatencyHigh
+        condition: E
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: A
+            query: _exists_:metrics.http.client.request.duration AND NOT attributes.server.address:*openai*
+            metrics:
+            - id: '1'
+              type: percentiles
+              field: metrics.http.client.request.duration
+              settings:
+                percents:
+                - '95'
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: attributes.server.address
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: B
+            query: _exists_:metrics.http.client.request.duration AND NOT attributes.server.address:*openai*
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: attributes.server.address
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: reduce
+            expression: A
+            reducer: mean
+            settings:
+              mode: dropNN
+        - refId: D
+          datasourceUid: __expr__
+          model:
+            refId: D
+            type: reduce
+            expression: B
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: E
+          datasourceUid: __expr__
+          model:
+            refId: E
+            type: math
+            expression: $C > 1 && $D >= 30
+        noDataState: OK
+        execErrState: KeepLast
+        for: 10m
+        labels:
+          namespace: dev
+          severity: warning
+          service: '{{ index $$labels "resource.attributes.service.name" }}'
+          target: '{{ index $$labels "attributes.server.address" }}'
+        annotations:
+          summary: '{{ index $labels "resource.attributes.service.name" }} → {{ index $labels "attributes.server.address" }} 호출의 최근 10분 p95가 {{ printf "%.2f" $values.C.Value }}초예요({{ printf "%.0f" $values.D.Value }}건).'
+          description: 나가는 HTTP 호출(내부 서비스, Google, Neptune)이 느려요. 상대 서비스의 지연·오류나 네트워크를 보세요. OpenAI 호출은 원래 오래 걸려 빼요(LLM 호출 시간은 대시보드에서 봐요).
+      - uid: db-latency-high
+        title: DbLatencyHigh
+        condition: E
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: A
+            query: _exists_:metrics.db.client.operation.duration
+            metrics:
+            - id: '1'
+              type: percentiles
+              field: metrics.db.client.operation.duration
+              settings:
+                percents:
+                - '95'
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: attributes.db.system.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: B
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: es-app-metrics
+          model:
+            refId: B
+            query: _exists_:metrics.db.client.operation.duration
+            metrics:
+            - id: '1'
+              type: count
+            bucketAggs:
+            - id: '10'
+              type: terms
+              field: resource.attributes.service.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '11'
+              type: terms
+              field: attributes.db.system.name
+              settings:
+                size: '50'
+                order: desc
+                orderBy: _term
+                min_doc_count: '1'
+            - id: '2'
+              type: date_histogram
+              field: '@timestamp'
+              settings:
+                interval: 1m
+                min_doc_count: '0'
+                trimEdges: '0'
+            timeField: '@timestamp'
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: reduce
+            expression: A
+            reducer: mean
+            settings:
+              mode: dropNN
+        - refId: D
+          datasourceUid: __expr__
+          model:
+            refId: D
+            type: reduce
+            expression: B
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: E
+          datasourceUid: __expr__
+          model:
+            refId: E
+            type: math
+            expression: $C > 1 && $D >= 30
+        noDataState: OK
+        execErrState: KeepLast
+        for: 10m
+        labels:
+          namespace: dev
+          severity: warning
+          service: '{{ index $$labels "resource.attributes.service.name" }}'
+          target: '{{ index $$labels "attributes.db.system.name" }}'
+        annotations:
+          summary: '{{ index $labels "resource.attributes.service.name" }}의 {{ index $labels "attributes.db.system.name" }} 명령 최근 10분 p95가 {{ printf "%.2f" $values.C.Value }}초예요({{ printf "%.0f" $values.D.Value }}건).'
+          description: DB(PostgreSQL)·Redis 명령이 느려요. RDS·Valkey 상태와 느린 쿼리 로그(RdsErrorLogs), 잠금 대기를 보세요. 연결 풀이 같이 막히면 DbPoolPending도 울려요.
