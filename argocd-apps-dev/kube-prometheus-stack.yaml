@@ -345,6 +345,22 @@ spec:
               secureJsonData:
                 basicAuthPassword: $ES_GRAFANA_PASSWORD
                 tlsCACert: $__file{/etc/grafana/es-ca/ca.crt}
+            # 앱 지표(JVM·런타임·HTTP·DB 풀·outbox 등). 서비스의 EDOT agent → EDOT Collector가 쓰는 metrics-*.otel-*를
+            # 앱 경보(loresentry-app)가 읽는다. trace로 만든 APM 집계 지표(metrics-service_transaction 등)도 같은 index 이름에 있다
+            - name: Elasticsearch app metrics
+              uid: es-app-metrics
+              type: elasticsearch
+              access: proxy
+              url: https://logs-es-http.monitoring.svc:9200
+              basicAuth: true
+              basicAuthUser: grafana
+              jsonData:
+                index: "metrics-*.otel-*"
+                timeField: "@timestamp"
+                tlsAuthWithCACert: true
+              secureJsonData:
+                basicAuthPassword: $ES_GRAFANA_PASSWORD
+                tlsCACert: $__file{/etc/grafana/es-ca/ca.crt}
 
           sidecar:
             # 대시보드는 label grafana_dashboard인 ConfigMap에서 읽는다(kps 기본값). 우리 대시보드(alerting/base/grafana/dashboards/)는
