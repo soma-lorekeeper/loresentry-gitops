@@ -150,10 +150,32 @@ DB 마스터 비밀번호는 `aws rds describe-db-instances --db-instance-identi
 `workload/overlays/dev/openai-mock/`. Responses API(`/v1/responses`, `/v1/responses/input_tokens`)를 흉내 낸다.
 
 - ai-chat: 지도에서 노드 id를 골라 `request_documents`를 부르므로 **content의 문서 읽기 부하가 실제로 생긴다.**
-  판정 호출은 통과로 답하고, 답은 고정 문장이다.
+  판정 호출은 통과로 답하고, 답은 고정 문장을 정해진 길이만큼 잘라 쓴다.
+- 설정 점검: 후보 수(`check_candidates`)를 주면 원문에서 인용을 잘라 후보를 만든다. 검증을 통과하므로 판정 호출까지 이어진다.
 - graph-rag: 응답 스키마의 최소 객체(변경 제안 없음)를 돌려준다. 최신화 파이프라인(S3·Kafka·Neptune 읽기)은 돈다.
-- 지연은 Deployment의 env로 바꾼다: `MOCK_TOOL_DELAY_MS`(1500-4000), `MOCK_TEXT_DELAY_MS`(3000-8000),
-  `MOCK_JUDGE_DELAY_MS`(800-2000), `MOCK_ANSWER_CHARS`(1200).
+- **TPM·RPM 한도**: 모델별 토큰 버킷. 차감은 `max(max_output_tokens, 입력 추정)`(`charge=sum`이면 합). 넘으면 OpenAI와 같은
+  429(`rate_limit_exceeded`, `retry-after`)를 주고, 한도를 켜면 모든 응답에 `x-ratelimit-*` 헤더가 붙는다. 0이면 꺼진다.
+  Deployment 기본값은 실제 `gpt-6-luna` 한도(TPM 180,000,000, RPM 30,000. 2026-11-04 응답 헤더로 확인)다.
+- 지연은 호출 종류별 로그정규 분포(중앙값, p90)다. 종류: `chat_tool`, `chat_answer`, `chat_judge`, `check_find`,
+  `check_judge`, `summary`, `refresh`, `count`, `other`.
+
+설정은 env(`MOCK_TPM`, `MOCK_RPM`, `MOCK_TPM_CHARGE`, `MOCK_CHARS_PER_TOKEN`, `MOCK_LATENCY_<KIND>="중앙값,p90"`,
+`MOCK_LATENCY_SCALE`, `MOCK_FAULTS="quota=0.01,overloaded=0.005"`, `MOCK_JUDGE_REJECT`, `MOCK_CHECK_CANDIDATES`, …)로 주거나
+실행 중에 관리 API로 바꾼다. 관리 API로 바꾼 값은 파드가 다시 뜨면 env 값으로 돌아간다.
+
+```bash
+kubectl --context lore-sentry-dev -n dev port-forward deploy/openai-mock 8000:8000
+curl -s localhost:8000/_mock/config                                         # 지금 설정
+curl -s localhost:8000/_mock/config -d '{"tpm": 2000000, "rpm": 5000}'       # 일부만 바꾼다. tpm·rpm을 바꾸면 버킷이 다시 찬다
+curl -s localhost:8000/_mock/config -d '{"faults": {"overloaded": 0.05}, "latency_scale": 2}'
+curl -s localhost:8000/_mock/stats                                          # 종류별 요청·결과·재시도·차감 토큰·지연, 버킷 잔량
+curl -s -X POST localhost:8000/_mock/reset                                  # 버킷을 채우고 통계를 0으로
+```
+
+Prometheus가 `/metrics`를 수집한다(ServiceMonitor `openai-mock`): `openai_mock_requests_total{kind,result}`,
+`openai_mock_tokens_charged_total{kind}`, `openai_mock_bucket_remaining{model,bucket}`, `openai_mock_delay_seconds_*`,
+`openai_mock_in_flight`. 설계와 보정 방법은 docs `test/ai_mock.md`, 단위 테스트는
+`python3 -m unittest workload/overlays/dev/openai-mock/test_server.py`.
 
 **실제 OpenAI로 바꾸려면** 별도 OpenAI 프로젝트의 키로 `ai-chat-openai`를 다시 만들고, dev overlay의
 `OPENAI_BASE_URL` 패치를 지운다. 같은 조직의 키는 prod와 rate limit을 나눠 쓴다.
